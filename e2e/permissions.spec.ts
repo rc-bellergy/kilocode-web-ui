@@ -1,0 +1,58 @@
+import { expect, test } from "@playwright/test"
+import { control, mockState } from "./mock-kilo-process"
+import { createMockSession, login, resetMock } from "./helpers"
+
+test.beforeEach(async ({ page }) => {
+  await resetMock()
+  await login(page)
+})
+
+test.describe("E2E-6 permission inbox", () => {
+  test("permission.asked badges the inbox; replies reach the mock with the right body", async ({ page }) => {
+    const sessionID = await createMockSession()
+    const inboxButton = page.getByTitle("Permission requests")
+
+    const request = (await control("/__control/permission", {
+      sessionID,
+      permission: "bash",
+      patterns: ["rm -rf /tmp/**"],
+      metadata: { command: "rm -rf /tmp/kilo-e2e/scratch" },
+    })) as { id: string }
+
+    // Badge count appears.
+    await expect(inboxButton.locator("span", { hasText: "1" })).toBeVisible()
+
+    // Open the inbox: request details shown.
+    await inboxButton.click()
+    const panel = page.locator("aside")
+    await expect(panel.getByText("bash").first()).toBeVisible()
+    await expect(panel.getByText("rm -rf /tmp/kilo-e2e/scratch")).toBeVisible()
+
+    // Allow once (panel stays open and live-updates with new requests).
+    await panel.getByRole("button", { name: "Approve" }).click()
+    await expect(inboxButton.locator("span", { hasText: "1" })).toHaveCount(0)
+    let { replies } = await mockState()
+    expect(replies.at(-1)).toMatchObject({ requestID: request.id, reply: "once" })
+    await expect(panel.getByText("Nothing pending")).toBeVisible()
+
+    // Always allow on a fresh request rendered into the same panel.
+    const request2 = (await control("/__control/permission", { sessionID, permission: "bash" })) as { id: string }
+    const alwaysBtn = panel.getByRole("button", { name: "Always allow" })
+    await expect(alwaysBtn).toBeVisible({ timeout: 10_000 })
+    await alwaysBtn.click()
+    ;({ replies } = await mockState())
+    expect(replies.at(-1)).toMatchObject({ requestID: request2.id, reply: "always" })
+    await expect(panel.getByText("Nothing pending")).toBeVisible()
+
+    // Reject with feedback.
+    const request3 = (await control("/__control/permission", { sessionID, permission: "bash" })) as { id: string }
+    const rejectBtn = panel.getByRole("button", { name: "Reject", exact: true })
+    await expect(rejectBtn).toBeVisible({ timeout: 10_000 })
+    await rejectBtn.click()
+    await panel.getByPlaceholder(/Optional feedback/).fill("use a safer command")
+    await panel.getByRole("button", { name: "Send rejection" }).click()
+    await expect(inboxButton.locator("span", { hasText: "1" })).toHaveCount(0)
+    ;({ replies } = await mockState())
+    expect(replies.at(-1)).toMatchObject({ requestID: request3.id, reply: "reject", message: "use a safer command" })
+  })
+})

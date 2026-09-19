@@ -1,0 +1,25 @@
+services:
+  kilocode-web:
+    build: .
+    container_name: kilocode-web # OrbStack resolves kilocode-web.orb.local on this Mac
+    restart: unless-stopped
+    init: true
+    ports:
+      # Publish only on loopback plus the ZeroTier interface (.env ZEROTIER_IP).
+      # Never on 0.0.0.0: the LAN must not reach this service. The :? guard
+      # fails loudly when ZEROTIER_IP is unset/empty — an empty host IP would
+      # otherwise silently publish on ALL interfaces.
+      - "127.0.0.1:3100:3100"
+      - "${ZEROTIER_IP:?ZEROTIER_IP must be set in .env (see .env.example)}:3100:3100"
+    env_file: .env
+    environment:
+      # Container viewpoint: kilo serve runs on the host (attach mode).
+      # Real environment wins over env_file values.
+      KILO_SERVER_URL: http://host.docker.internal:${KILO_SERVE_PORT:-4096}
+      # Inside the container every client IP is the OrbStack gateway (198.19.x),
+      # so the app-level allowlist is meaningless there; network-level
+      # restriction comes from the port bindings above.
+      ALLOWED_IPS: ""
+    extra_hosts:
+      # Not needed on OrbStack (native support); kept for portability to Linux.
+      - "host.docker.internal:host-gateway"
