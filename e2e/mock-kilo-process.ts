@@ -98,7 +98,9 @@ export function mockState(): Promise<{
   sessions: { id: string; directory: string }[]
   statuses: Record<string, { type: string }>
   permissions: { id: string; sessionID: string; permission: string }[]
+  questions: { id: string; sessionID: string }[]
   replies: { requestID: string; reply: string; message?: string }[]
+  questionReplies: { requestID: string; answers: string[][] | null; rejected: boolean }[]
   aborts: string[]
   prompts: { sessionID: string; body: { agent?: string; model?: unknown; parts: { type: string; text?: string }[] } }[]
   lastEventIDs: (string | undefined)[]

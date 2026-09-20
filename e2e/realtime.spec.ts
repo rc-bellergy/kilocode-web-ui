@@ -33,7 +33,7 @@ test.describe("E2E-7 realtime updates and reconnect gap-fill", () => {
     await expect(page.getByText(/unreachable|Cannot attach/i)).toHaveCount(0, { timeout: 30_000 })
 
     // Agents/providers came back: opening a session shows the mode options.
-    await page.getByRole("button", { name: "+ New session" }).click()
+    await page.getByRole("button", { name: "New session" }).click()
     await expect(page.getByTitle("Agent mode")).toBeVisible()
     const options = await page.getByTitle("Agent mode").locator("option").allTextContents()
     expect(options.join(" ")).toContain("Ask")

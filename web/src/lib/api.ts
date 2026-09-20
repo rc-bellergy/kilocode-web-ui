@@ -56,6 +56,7 @@ export const api = {
     messages: (d: string | null, sessionID: string) =>
       json<import("./types").Message[]>(`/api/kilo/session/${sessionID}/message${dir(d)}`),
     permissions: (d: string | null) => json<import("./types").PermissionRequest[]>(`/api/kilo/permission${dir(d)}`),
+    questions: (d: string | null) => json<import("./types").QuestionRequest[]>(`/api/kilo/question${dir(d)}`),
     agents: (d: string | null) => json<import("./types").Agent[]>(`/api/kilo/agent${dir(d)}`),
     providers: (d: string | null) => json<import("./types").ProviderList>(`/api/kilo/provider${dir(d)}`),
   },
@@ -92,6 +93,14 @@ export const api = {
         headers: { "content-type": "application/json" },
         body: JSON.stringify(message !== undefined ? { reply, message } : { reply }),
       }),
+    questionReply: (d: string | null, requestID: string, answers: string[][]) =>
+      request(`/api/kilo/question/${requestID}/reply${dir(d)}`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ answers }),
+      }),
+    questionReject: (d: string | null, requestID: string) =>
+      request(`/api/kilo/question/${requestID}/reject${dir(d)}`, { method: "POST" }),
   },
   del: {
     session: (d: string | null, sessionID: string) => request(`/api/kilo/session/${sessionID}${dir(d)}`, { method: "DELETE" }),

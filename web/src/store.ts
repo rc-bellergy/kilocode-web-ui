@@ -12,6 +12,7 @@ import type {
   PermissionRequest,
   Project,
   ProviderInfo,
+  QuestionRequest,
   SessionInfo,
   SessionStatus,
 } from "./lib/types"
@@ -40,6 +41,7 @@ interface AppState {
   sessions: SessionInfo[]
   statuses: Record<string, SessionStatus>
   permissions: PermissionRequest[]
+  questions: QuestionRequest[]
 
   // open session
   openSessionID: string | null
@@ -71,6 +73,9 @@ interface AppState {
   sendPrompt: (text: string, selection: ComposerSelection) => Promise<void>
   abort: () => Promise<void>
   replyPermission: (requestID: string, reply: "once" | "always" | "reject", message?: string) => Promise<void>
+  refreshQuestions: () => Promise<void>
+  replyQuestion: (requestID: string, answers: string[][]) => Promise<void>
+  rejectQuestion: (requestID: string) => Promise<void>
   setComposer: (selection: ComposerSelection) => void
   logout: () => Promise<void>
   showToast: (msg: string) => void
@@ -208,6 +213,7 @@ export const useStore = create<AppState>((set, get) => ({
   sessions: [],
   statuses: {},
   permissions: [],
+  questions: [],
   openSessionID: null,
   messages: [],
   messagesLoading: false,
@@ -224,6 +230,7 @@ export const useStore = create<AppState>((set, get) => ({
     await Promise.all([
       get().refreshSessions(),
       get().refreshPermissions(),
+      get().refreshQuestions(),
       get().refreshAgentsAndProviders(),
     ])
     get().setDirectory(get().directory)
@@ -270,6 +277,7 @@ export const useStore = create<AppState>((set, get) => ({
     set({ directory: dir })
     void get().refreshSessions()
     void get().refreshPermissions()
+    void get().refreshQuestions()
     void get().refreshStatuses()
     // Per-worktree agents/models can differ; refetch on switch (P1-5).
     void get().refreshAgentsAndProviders()
@@ -334,6 +342,16 @@ export const useStore = create<AppState>((set, get) => ({
     }
   },
 
+  async refreshQuestions() {
+    const { directory } = get()
+    try {
+      const questions = await api.get.questions(directory)
+      set({ questions })
+    } catch {
+      /* transient */
+    }
+  },
+
   async refreshAgentsAndProviders() {
     const { directory } = get()
     try {
@@ -346,7 +364,9 @@ export const useStore = create<AppState>((set, get) => ({
 
   async openSession(id) {
     lastOpenSessionEventAt = Date.now()
-    const switching = get().openSessionID !== id
+    // Only a genuine switch to a different session drops the pick; a fresh
+    // boot (openSessionID null, e.g. page reload) keeps the stored selection.
+    const switching = get().openSessionID !== null && get().openSessionID !== id
     set({
       openSessionID: id,
       messages: [],
@@ -425,6 +445,28 @@ export const useStore = create<AppState>((set, get) => ({
     } catch (err) {
       get().showToast(errText(err))
       await get().refreshPermissions()
+    }
+  },
+
+  async replyQuestion(requestID, answers) {
+    const { directory } = get()
+    set((s) => ({ questions: s.questions.filter((q) => q.id !== requestID) }))
+    try {
+      await api.post.questionReply(directory, requestID, answers)
+    } catch (err) {
+      get().showToast(errText(err))
+      await get().refreshQuestions()
+    }
+  },
+
+  async rejectQuestion(requestID) {
+    const { directory } = get()
+    set((s) => ({ questions: s.questions.filter((q) => q.id !== requestID) }))
+    try {
+      await api.post.questionReject(directory, requestID)
+    } catch (err) {
+      get().showToast(errText(err))
+      await get().refreshQuestions()
     }
   },
 
@@ -572,6 +614,36 @@ export const useStore = create<AppState>((set, get) => ({
       case "permission.replied":
         void get().refreshPermissions()
         break
+      // Real kilo emits question.asked/replied/rejected (@/question); older
+      // core builds emit question.v2.* — listen for both shapes.
+      case "question.asked":
+      case "question.v2.asked": {
+        const request = p as unknown as QuestionRequest
+        const title = get().sessions.find((s) => s.id === request.sessionID)?.title ?? "session"
+        const first = request.questions?.[0]
+        get().showToast(`Agent asks: ${first?.header ?? "question"}`)
+        systemNotify(
+          `Agent asks a question`,
+          {
+            body: `${first?.header ?? first?.question ?? title} — ${title}`,
+            tag: `kilo-question-${request.id ?? ""}`,
+            onClick: () => window.location.assign(`/session/${request.sessionID}`),
+          },
+          loadNotifyPrefs(),
+        )
+        if (request.id && !get().questions.some((q) => q.id === request.id)) {
+          set((s) => ({ questions: [...s.questions, request] }))
+        }
+        break
+      }
+      case "question.replied":
+      case "question.v2.replied":
+      case "question.rejected":
+      case "question.v2.rejected": {
+        const requestID = p.requestID as string | undefined
+        if (requestID) set((s) => ({ questions: s.questions.filter((q) => q.id !== requestID) }))
+        break
+      }
       default:
         break
     }
@@ -611,6 +683,7 @@ function gapFill(set: (partial: Partial<AppState>) => void, get: () => AppState)
   void get().refreshSessions()
   void get().refreshStatuses()
   void get().refreshPermissions()
+  void get().refreshQuestions()
   void get().refreshAgentsAndProviders()
   if (get().openSessionID) void refreshOpenMessages(set, get)
   // P0-3: projects missed while kilo was warming up never load —refetch

@@ -1,7 +1,9 @@
 import DOMPurify from "dompurify"
 import { marked } from "marked"
 import { useMemo, useState } from "react"
-import type { Message, Part, ToolState } from "../lib/types"
+import type { Message, Part, QuestionItem, ToolState } from "../lib/types"
+import { useStore } from "../store"
+import QuestionForm from "./QuestionForm"
 
 marked.setOptions({ async: false, gfm: true, breaks: true })
 
@@ -76,6 +78,113 @@ function ToolCard({ part }: { part: Extract<Part, { type: "tool" }> }) {
   )
 }
 
+/** Extract the questions list from a question tool part's input. */
+function questionItems(part: Extract<Part, { type: "tool" }>): QuestionItem[] {
+  const input = part.state?.input as { questions?: QuestionItem[] } | undefined
+  return Array.isArray(input?.questions) ? input.questions : []
+}
+
+/** Parse a completed question tool output ("{\"answers\":[[…]]}") back into labels. */
+function parseAnswers(output: string | undefined): string[][] | null {
+  if (!output) return null
+  try {
+    const parsed = JSON.parse(output) as { answers?: unknown }
+    if (Array.isArray(parsed.answers) && parsed.answers.every((a) => Array.isArray(a))) {
+      return parsed.answers.map((a) => (a as unknown[]).map(String))
+    }
+  } catch {
+    /* formatted text output */
+  }
+  return null
+}
+
+/**
+ * The agent's `question` tool call. While a matching question.v2 request is
+ * pending this renders the interactive answer form; once answered it shows
+ * the chosen options next to each question (VS Code parity).
+ */
+function QuestionToolCard({ part }: { part: Extract<Part, { type: "tool" }> }) {
+  const state: ToolState = part.state
+  const questions = useStore((s) => s.questions)
+  const replyQuestion = useStore((s) => s.replyQuestion)
+  const rejectQuestion = useStore((s) => s.rejectQuestion)
+  const items = questionItems(part)
+  const pending = questions.find(
+    (q) => q.sessionID === part.sessionID && q.tool?.callID === part.callID,
+  )
+  const answers = state.status === "completed" ? parseAnswers(state.output) : null
+  const dismissed = state.status === "error"
+
+  if (pending && (state.status === "pending" || state.status === "running")) {
+    return <QuestionForm request={pending} onSubmit={(a) => replyQuestion(pending.id, a)} onDismiss={() => rejectQuestion(pending.id)} />
+  }
+
+  return (
+    <div
+      className={`rounded-xl border p-3 ${
+        dismissed ? "border-zinc-800 bg-zinc-900/70" : "border-zinc-800 bg-zinc-900/70"
+      }`}
+      data-testid="question-tool-card"
+    >
+      <div className="flex items-center gap-2">
+        <span
+          className={`rounded px-1.5 py-0.5 text-[10px] font-semibold uppercase ${
+            answers
+              ? "bg-emerald-500/15 text-emerald-300"
+              : dismissed
+                ? "bg-zinc-500/15 text-zinc-400"
+                : "bg-sky-500/15 text-sky-300"
+          }`}
+        >
+          {answers ? "answered" : dismissed ? "dismissed" : "question"}
+        </span>
+        <span className="text-sm font-medium text-zinc-200">
+          {items.length > 0 ? `Agent question${items.length > 1 ? `s (${items.length})` : ""}` : part.tool}
+        </span>
+      </div>
+      <div className="mt-2 space-y-2.5">
+        {items.map((q, i) => (
+          <div key={i}>
+            <div className="text-xs font-semibold uppercase tracking-wide text-zinc-400">{q.header}</div>
+            <div className="text-sm text-zinc-200">{q.question}</div>
+            {answers ? (
+              <div className="mt-1 flex flex-wrap gap-1.5">
+                {(answers[i]?.length ? answers[i] : ["Unanswered"]).map((label) => (
+                  <span
+                    key={label}
+                    className="inline-flex items-center gap-1 rounded-full bg-emerald-500/10 px-2 py-0.5 text-xs text-emerald-300"
+                  >
+                    <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3">
+                      <path d="M20 6 9 17l-5-5" />
+                    </svg>
+                    {label}
+                  </span>
+                ))}
+              </div>
+            ) : (
+              <ul className="mt-1 space-y-0.5">
+                {q.options.map((opt) => (
+                  <li key={opt.label} className="text-xs text-zinc-500">
+                    • {opt.label}
+                    {opt.description ? ` — ${opt.description}` : ""}
+                  </li>
+                ))}
+              </ul>
+            )}
+          </div>
+        ))}
+        {items.length === 0 && <Json value={state.input} label="input" />}
+      </div>
+      {dismissed && typeof (state as { error?: string }).error === "string" && (
+        <div className="mt-2 rounded-lg bg-zinc-950/60 px-2.5 py-1.5 text-xs text-zinc-400">
+          {(state as { error: string }).error}
+        </div>
+      )}
+      {state.status === "completed" && state.output && !answers && <Json value={state.output} label="output" />}
+    </div>
+  )
+}
+
 function PartView({ part, index }: { part: Part; index: number }) {
   switch (part.type) {
     case "text":
@@ -88,7 +197,7 @@ function PartView({ part, index }: { part: Part; index: number }) {
         </details>
       )
     case "tool":
-      return <ToolCard part={part} />
+      return part.tool === "question" ? <QuestionToolCard part={part} /> : <ToolCard part={part} />
     case "file":
       return (
         <div className="flex items-center gap-2 rounded-lg border border-zinc-800 bg-zinc-900/50 px-3 py-2 text-sm">
@@ -220,4 +329,15 @@ export default function MessageList({ messages }: { messages: Message[] }) {
       ))}
     </div>
   )
+}
+
+/**
+ * True when the transcript already renders a question tool part for this
+ * request (its interactive form lives inline); used to decide whether the
+ * composer fallback should also render it above the input.
+ */
+export function hasQuestionPart(messages: Message[], request: { tool?: { callID?: string } }): boolean {
+  const callID = request.tool?.callID
+  if (!callID) return false
+  return messages.some((m) => m.parts.some((p) => p.type === "tool" && p.callID === callID))
 }

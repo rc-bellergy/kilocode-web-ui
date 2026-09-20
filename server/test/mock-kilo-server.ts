@@ -30,9 +30,21 @@ function randomTail(len = 14): string {
   for (let i = 0; i < len; i++) out += RANDOM_ALPHABET[bytes[i] % RANDOM_ALPHABET.length]
   return out
 }
-function makeID(prefix: "ses_" | "msg_" | "prt_" | "per_" | "evt_"): string {
+function makeID(prefix: "ses_" | "msg_" | "prt_" | "per_" | "que_" | "evt_"): string {
   return `${prefix}${ascendingHex()}${randomTail()}`
 }
+
+// Default question.v2 payload for control-triggered questions.
+const DEFAULT_QUESTIONS = [
+  {
+    question: "Which database should the app use?",
+    header: "Database",
+    options: [
+      { label: "PostgreSQL (Recommended)", description: "Relational, mature ecosystem" },
+      { label: "SQLite", description: "Embedded, zero-config" },
+    ],
+  },
+]
 
 // ---------------------------------------------------------------- state
 
@@ -47,7 +59,9 @@ export interface MockState {
   sessions: Map<string, MockSession>
   statuses: Record<string, Record<string, unknown>>
   permissions: Record<string, unknown>[]
+  questions: Record<string, unknown>[]
   replies: { requestID: string; reply: string; message?: string }[]
+  questionReplies: { requestID: string; answers: string[][] | null; rejected: boolean }[]
   aborts: string[]
   prompts: { sessionID: string; body: Record<string, unknown> }[]
   lastEventIDs: (string | undefined)[]
@@ -132,7 +146,7 @@ export function startMockKilo(opts: MockKiloOptions = {}): Promise<MockKilo> {
   // Clients wedged via /__control/sse-silence: still connected, written to by
   // nothing — simulates a zombie stream (no events, no close, no error).
   const silenced = new Set<SseClient>()
-  const replyWaiters = new Map<string, () => void>()
+  const replyWaiters = new Map<string, (answers?: string[][]) => void>()
   const heartbeat = new Map<string, NodeJS.Timeout>()
 
   const state: MockState = {
@@ -140,7 +154,9 @@ export function startMockKilo(opts: MockKiloOptions = {}): Promise<MockKilo> {
     sessions: new Map(),
     statuses: {},
     permissions: [],
+    questions: [],
     replies: [],
+    questionReplies: [],
     aborts: [],
     prompts: [],
     lastEventIDs: [],
@@ -347,9 +363,82 @@ export function startMockKilo(opts: MockKiloOptions = {}): Promise<MockKilo> {
       state.permissions.push(request)
       emit("permission.asked", request)
       await new Promise<void>((resolve) => {
-        replyWaiters.set(request.id as string, resolve)
+        replyWaiters.set(request.id as string, () => resolve())
         setTimeout(resolve, 20_000).unref()
       })
+      await sleep()
+    }
+
+    // question.v2 gate: ask, wait for reply/reject, then finish the tool part
+    if (wants("+Q")) {
+      const callID = `call${ascendingHex()}${randomTail()}`
+      const questions = wants("+QMULTI")
+        ? [
+            {
+              question: "Which features should land first?",
+              header: "Scope",
+              multiple: true,
+              options: [
+                { label: "Auth", description: "Login flow" },
+                { label: "Billing", description: "Payments" },
+                { label: "Docs", description: "User guide" },
+              ],
+            },
+          ]
+        : wants("+QNOCUSTOM")
+          ? [
+              {
+                question: "Ship on Friday?",
+                header: "Release",
+                custom: false,
+                options: [
+                  { label: "Yes", description: "Cut the release" },
+                  { label: "No", description: "Wait a week" },
+                ],
+              },
+            ]
+          : DEFAULT_QUESTIONS
+      const tool: Record<string, unknown> = {
+        id: makeID("prt_"),
+        sessionID,
+        messageID: assistant.info.id,
+        type: "tool",
+        callID,
+        tool: "question",
+        state: { status: "running", input: { questions }, title: "question", time: { start: Date.now() } },
+      }
+      assistant.parts.push(tool)
+      emit("message.part.updated", { sessionID, part: { ...tool }, time: Date.now() })
+      const request: Record<string, unknown> = {
+        id: makeID("que_"),
+        sessionID,
+        questions,
+        tool: { messageID: assistant.info.id, callID },
+      }
+      state.questions.push(request)
+      emit("question.asked", request)
+      const answered = await new Promise<{ answers: string[][] | null }>((resolve) => {
+        replyWaiters.set(request.id as string, (answers?: string[][]) => resolve({ answers: answers ?? null }))
+        setTimeout(() => resolve({ answers: null }), 20_000).unref()
+      })
+      if (answered.answers) {
+        tool.state = {
+          status: "completed",
+          input: { questions },
+          output: JSON.stringify({ answers: answered.answers }),
+          title: "question",
+          time: { start: Date.now(), end: Date.now() },
+        }
+      } else {
+        tool.state = {
+          status: "error",
+          input: { questions },
+          error: "The user dismissed this question",
+          title: "question",
+          time: { start: Date.now(), end: Date.now() },
+        }
+      }
+      emit("message.part.updated", { sessionID, part: { ...tool }, time: Date.now() })
       await sleep()
     }
 
@@ -568,6 +657,42 @@ export function startMockKilo(opts: MockKiloOptions = {}): Promise<MockKilo> {
         return
       }
 
+      if (url.pathname === "/question" && req.method === "GET") {
+        const list = state.questions.filter((q) => {
+          if (!directory) return true
+          const s = state.sessions.get(q.sessionID as string)
+          return s?.directory === directory
+        })
+        json(res, 200, list)
+        return
+      }
+      m = /^\/question\/([^/]+)\/reply$/.exec(url.pathname)
+      if (m && req.method === "POST") {
+        const body = await readBody(req)
+        const answers = Array.isArray(body.answers) ? (body.answers as string[][]) : []
+        const idx = state.questions.findIndex((q) => q.id === m![1])
+        if (idx === -1) return json(res, 404, { error: "question not found" })
+        const [request] = state.questions.splice(idx, 1)
+        state.questionReplies.push({ requestID: m[1], answers, rejected: false })
+        emit("question.replied", { sessionID: request.sessionID, requestID: m[1], answers })
+        replyWaiters.get(m[1])?.(answers)
+        replyWaiters.delete(m[1])
+        json(res, 200, true)
+        return
+      }
+      m = /^\/question\/([^/]+)\/reject$/.exec(url.pathname)
+      if (m && req.method === "POST") {
+        const idx = state.questions.findIndex((q) => q.id === m![1])
+        if (idx === -1) return json(res, 404, { error: "question not found" })
+        const [request] = state.questions.splice(idx, 1)
+        state.questionReplies.push({ requestID: m[1], answers: null, rejected: true })
+        emit("question.rejected", { sessionID: request.sessionID, requestID: m[1] })
+        replyWaiters.get(m[1])?.()
+        replyWaiters.delete(m[1])
+        json(res, 200, true)
+        return
+      }
+
       if (url.pathname === "/agent" && req.method === "GET") {
         json(res, 200, AGENTS)
         return
@@ -594,7 +719,9 @@ export function startMockKilo(opts: MockKiloOptions = {}): Promise<MockKilo> {
           sessions: [...state.sessions.entries()].map(([id, s]) => ({ id, directory: s.directory, info: s.info })),
           statuses: state.statuses,
           permissions: state.permissions,
+          questions: state.questions,
           replies: state.replies,
+          questionReplies: state.questionReplies,
           aborts: state.aborts,
           prompts: state.prompts,
           lastEventIDs: state.lastEventIDs,
@@ -613,7 +740,9 @@ export function startMockKilo(opts: MockKiloOptions = {}): Promise<MockKilo> {
           state.sessions = new Map()
           state.statuses = {}
           state.permissions = []
+          state.questions = []
           state.replies = []
+          state.questionReplies = []
           state.aborts = []
           state.prompts = []
           state.hung = new Set()
@@ -651,6 +780,20 @@ export function startMockKilo(opts: MockKiloOptions = {}): Promise<MockKilo> {
           }
           state.permissions.push(request)
           emit("permission.asked", request, (body.directory as string) ?? null)
+          json(res, 200, request)
+          return
+        }
+        case "/__control/question": {
+          // Standalone question.asked with no transcript tool part —
+          // exercises the composer fallback / inbox rendering paths.
+          const request: Record<string, unknown> = {
+            id: makeID("que_"),
+            sessionID: body.sessionID ?? "ses_external000000000000000000",
+            questions: body.questions ?? DEFAULT_QUESTIONS,
+            tool: body.tool,
+          }
+          state.questions.push(request)
+          emit("question.asked", request, (body.directory as string) ?? null)
           json(res, 200, request)
           return
         }
@@ -743,7 +886,9 @@ export function startMockKilo(opts: MockKiloOptions = {}): Promise<MockKilo> {
             state.sessions = new Map()
             state.statuses = {}
             state.permissions = []
+            state.questions = []
             state.replies = []
+            state.questionReplies = []
             state.aborts = []
             state.prompts = []
             state.hung = new Set()

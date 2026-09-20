@@ -116,6 +116,27 @@ export interface PermissionRequest {
   tool?: { messageID: string; callID: string }
 }
 
+/** question.v2 payloads (kilo QuestionV2 contract). */
+export interface QuestionOption {
+  label: string
+  description?: string
+}
+
+export interface QuestionItem {
+  question: string
+  header: string
+  options: QuestionOption[]
+  multiple?: boolean
+  custom?: boolean
+}
+
+export interface QuestionRequest {
+  id: string
+  sessionID: string
+  questions: QuestionItem[]
+  tool?: { messageID: string; callID: string }
+}
+
 export interface Agent {
   name: string
   displayName?: string

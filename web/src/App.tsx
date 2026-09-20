@@ -94,6 +94,7 @@ export default function App() {
   const init = useStore((s) => s.init)
   const refreshHealth = useStore((s) => s.refreshHealth)
   const permissions = useStore((s) => s.permissions)
+  const questions = useStore((s) => s.questions)
   const unreadCompleted = useStore((s) => s.unreadCompleted)
   const directory = useStore((s) => s.directory)
   const setPermissionInboxOpen = useStore((s) => s.setPermissionInboxOpen)
@@ -136,10 +137,10 @@ export default function App() {
     }
   }, [health, banner, sseConnected, refreshHealth])
 
-  // Title badge: pending permissions + unviewed completed sessions.
+  // Title badge: pending permissions + questions + unviewed completed sessions.
   useEffect(() => {
-    updateTitleBadge(permissions.length + unreadCompleted.length)
-  }, [permissions.length, unreadCompleted.length])
+    updateTitleBadge(permissions.length + questions.length + unreadCompleted.length)
+  }, [permissions.length, questions.length, unreadCompleted.length])
 
   if (location.pathname === "/login") {
     if (authenticated) return <Navigate to="/" replace />
@@ -191,7 +192,7 @@ export default function App() {
         </div>
       )}
       <span className="sr-only" aria-live="polite">
-        {permissions.length} pending permissions
+        {permissions.length + questions.length} pending approvals
       </span>
     </div>
   )

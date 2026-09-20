@@ -1,8 +1,9 @@
 import { KeyboardEvent, useEffect, useRef, useState } from "react"
 import { Link, useParams } from "react-router-dom"
-import MessageList from "../components/MessageList"
+import MessageList, { hasQuestionPart } from "../components/MessageList"
 import ModeSelect from "../components/ModeSelect"
 import ModelSelect from "../components/ModelSelect"
+import QuestionForm from "../components/QuestionForm"
 import { useStore } from "../store"
 
 export default function Session() {
@@ -19,6 +20,9 @@ export default function Session() {
   const setComposer = useStore((s) => s.setComposer)
   const permissions = useStore((s) => s.permissions)
   const replyPermission = useStore((s) => s.replyPermission)
+  const questions = useStore((s) => s.questions)
+  const replyQuestion = useStore((s) => s.replyQuestion)
+  const rejectQuestion = useStore((s) => s.rejectQuestion)
 
   const [text, setText] = useState("")
   const [rejecting, setRejecting] = useState<string | null>(null)
@@ -31,6 +35,12 @@ export default function Session() {
   const busy = status?.type === "busy" || status?.type === "retry"
   const session = sessions.find((s) => s.id === sessionID)
   const sessionPermissions = sessionID ? permissions.filter((p) => p.sessionID === sessionID) : []
+  // Pending questions whose tool part is not (yet) in the transcript render
+  // above the composer; matched ones render inline in the message list.
+  const sessionQuestions =
+    sessionID && !messagesLoading
+      ? questions.filter((q) => q.sessionID === sessionID && !hasQuestionPart(messages, q))
+      : []
 
   async function reply(id: string, kind: "once" | "always" | "reject") {
     setBusyPerm(id)
@@ -129,6 +139,19 @@ export default function Session() {
         <MessageList messages={messages} />
         <div ref={bottomRef} />
       </div>
+
+      {sessionQuestions.length > 0 && (
+        <div className="space-y-3 border-t border-sky-500/30 py-3">
+          {sessionQuestions.map((q) => (
+            <QuestionForm
+              key={q.id}
+              request={q}
+              onSubmit={(answers) => replyQuestion(q.id, answers)}
+              onDismiss={() => rejectQuestion(q.id)}
+            />
+          ))}
+        </div>
+      )}
 
       {sessionPermissions.length > 0 && (
         <div className="space-y-3 border-t border-amber-500/30 py-3">

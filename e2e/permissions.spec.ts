@@ -55,4 +55,31 @@ test.describe("E2E-6 permission inbox", () => {
     ;({ replies } = await mockState())
     expect(replies.at(-1)).toMatchObject({ requestID: request3.id, reply: "reject", message: "use a safer command" })
   })
+
+  test("drawer overlays the full viewport and closes via the close button", async ({ page }) => {
+    const sessionID = await createMockSession()
+    await control("/__control/permission", { sessionID, permission: "bash" })
+    const inboxButton = page.getByTitle("Permission requests")
+    await expect(inboxButton.locator("span", { hasText: "1" })).toBeVisible()
+
+    await inboxButton.click()
+    const panel = page.locator("aside")
+    await expect(panel.getByRole("button", { name: "Approve" })).toBeVisible()
+
+    // Regression (backdrop-blur containing block): the overlay must be a
+    // body-level portal covering the viewport, not a fixed child squeezed
+    // into the blurred header strip.
+    const overlay = page.locator("body > div.fixed")
+    await expect(overlay).toHaveCount(1)
+    const viewport = page.viewportSize()!
+    const box = await overlay.boundingBox()
+    expect(box).toEqual({ x: 0, y: 0, width: viewport.width, height: viewport.height })
+    const approveBox = await panel.getByRole("button", { name: "Approve" }).boundingBox()
+    expect(approveBox!.y).toBeGreaterThan(0)
+    expect(approveBox!.y + approveBox!.height).toBeLessThanOrEqual(viewport.height)
+
+    // Close button dismisses the drawer.
+    await panel.getByRole("button", { name: "Close permission requests" }).click()
+    await expect(page.locator("aside")).toHaveCount(0)
+  })
 })

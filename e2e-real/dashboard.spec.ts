@@ -9,7 +9,7 @@ test.describe("E2E-3R session dashboard (real kilo)", () => {
 
   test("create via UI → auto-enter → delete → removed", async ({ page }) => {
     const before = await page.locator("a[href^='/session/']").count()
-    await page.getByRole("button", { name: "+ New session" }).click()
+    await page.getByRole("button", { name: "New session" }).click()
     await expect(page).toHaveURL(/\/session\/ses_/, { timeout: 30_000 })
     const sessionID = page.url().split("/").pop()!
 

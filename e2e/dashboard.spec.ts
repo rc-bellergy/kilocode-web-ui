@@ -9,7 +9,7 @@ test.beforeEach(async ({ page }) => {
 
 test.describe("E2E-3 session dashboard", () => {
   test("create → auto-enter, delete → removed from list", async ({ page }) => {
-    await page.getByRole("button", { name: "+ New session" }).click()
+    await page.getByRole("button", { name: "New session" }).click()
     await expect(page).toHaveURL(/\/session\/ses_/)
     await page.goto("/")
 

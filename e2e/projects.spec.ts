@@ -12,7 +12,7 @@ test.describe("E2E-2 multi-project switching", () => {
 
     // Create a session in project A through the UI.
     await projectSelect.selectOption(PROJECT_A)
-    await page.getByRole("button", { name: "+ New session" }).click()
+    await page.getByRole("button", { name: "New session" }).click()
     await expect(page).toHaveURL(/\/session\//)
     const sessionA = page.url().split("/").pop()!
     await page.goto("/")
@@ -24,7 +24,7 @@ test.describe("E2E-2 multi-project switching", () => {
     await expect(page.getByText("No sessions yet")).toBeVisible()
 
     // Create a session in B.
-    await page.getByRole("button", { name: "+ New session" }).click()
+    await page.getByRole("button", { name: "New session" }).click()
     await expect(page).toHaveURL(/\/session\//)
     const sessionB = page.url().split("/").pop()!
     await page.goto("/")
