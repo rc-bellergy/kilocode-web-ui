@@ -4,6 +4,7 @@ import cookieParser from "cookie-parser"
 import express from "express"
 import type { Express } from "express"
 import { authRoutes, healthHandler, requireAuth } from "./auth.js"
+import { favouritesRouter } from "./favourites.js"
 import { ipAllowlist, parseAllowlist } from "./ipAllowlist.js"
 import { proxyHandler } from "./proxy.js"
 
@@ -26,6 +27,9 @@ export function createApp(): Express {
   authRoutes(authRouter)
   app.use("/api/auth", express.json({ limit: "1mb" }), authRouter)
   app.use("/api", requireAuth)
+
+  // kilo-web's own JSON storage (model favourites); auth-gated like /api/kilo.
+  app.use("/api/favourites", express.json({ limit: "256kb" }), favouritesRouter)
 
   // Proxy to kilo serve. Raw body parser so any content type passes through untouched.
   app.use("/api/kilo", express.raw({ type: "*/*", limit: "25mb" }), proxyHandler)

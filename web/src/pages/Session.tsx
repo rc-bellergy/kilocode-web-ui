@@ -88,12 +88,18 @@ export default function Session() {
     bottomRef.current?.scrollIntoView({ behavior: "smooth", block: "end" })
   }, [streamSignature])
 
-  function onKeyDown(e: KeyboardEvent<HTMLTextAreaElement>) {
-    if (e.key === "Enter" && !e.shiftKey) {
-      e.preventDefault()
-      submit()
-    }
+// On touch devices (iPad etc.) the on-screen keyboard has no Shift key, so the
+// return key must insert a newline; sending happens via the Send button only.
+const isTouchDevice =
+  typeof window !== "undefined" &&
+  (window.matchMedia?.("(pointer: coarse)")?.matches || navigator.maxTouchPoints > 1)
+
+function onKeyDown(e: KeyboardEvent<HTMLTextAreaElement>) {
+  if (!isTouchDevice && e.key === "Enter" && !e.shiftKey) {
+    e.preventDefault()
+    submit()
   }
+}
 
   async function submit() {
     const t = text.trim()
@@ -234,7 +240,9 @@ export default function Session() {
           value={text}
           onChange={(e) => setText(e.target.value)}
           onKeyDown={onKeyDown}
-          placeholder="Message Kilo… (Enter to send, Shift+Enter for newline)"
+          placeholder={
+            isTouchDevice ? "Message Kilo… (return inserts a newline; use Send)" : "Message Kilo… (Enter to send, Shift+Enter for newline)"
+          }
           rows={3}
           className="w-full resize-none rounded-xl border border-zinc-700 bg-zinc-900 px-3.5 py-2.5 text-sm outline-none placeholder:text-zinc-600 focus:border-sky-500"
         />

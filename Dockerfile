@@ -21,6 +21,8 @@ RUN npm ci --omit=dev -w server
 # Layout matters: app.ts resolves the SPA as __dirname/../../web/dist.
 COPY --from=build /app/server/dist server/dist
 COPY --from=build /app/web/dist web/dist
+# Writable by the node user even when no data volume is mounted.
+RUN mkdir -p /app/data && chown node:node /app/data
 USER node
 EXPOSE 3100
 HEALTHCHECK --interval=30s --timeout=5s --start-period=15s --retries=3 \

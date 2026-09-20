@@ -58,11 +58,13 @@ export interface NotifyOptions {
 }
 
 /**
- * Fire a system notification. Only when the tab is hidden (foreground uses
- * toast/badge to avoid double-buzzing) and permission is granted.
+ * Fire a system notification. The OS notification only fires when the tab is
+ * hidden (foreground uses toast/badge to avoid double-buzzing) and permission
+ * is granted; the beep is independent of both — it plays whenever sound is on.
  */
 export function systemNotify(title: string, opts: NotifyOptions = {}, prefs: NotifyPrefs): void {
   if (!prefs.enabled) return
+  if (prefs.sound) beep()
   if (!notificationsSupported() || Notification.permission !== "granted") return
   if (!document.hidden) return
   try {
@@ -75,16 +77,28 @@ export function systemNotify(title: string, opts: NotifyOptions = {}, prefs: Not
   } catch {
     /* some platforms throw on ctor without SW; badge still works */
   }
-  if (prefs.sound) beep()
 }
 
 let audioCtx: AudioContext | null = null
+
+/**
+ * Create/resume the AudioContext inside a user gesture (speaker toggle) so
+ * autoplay policy lets later beeps play, including in background tabs.
+ */
+export function primeAudio(): void {
+  try {
+    audioCtx ??= new AudioContext()
+    if (audioCtx.state === "suspended") audioCtx.resume().catch(() => {})
+  } catch {
+    /* audio unsupported */
+  }
+}
 
 /** Short two-tone beep via WebAudio; no asset files needed. */
 export function beep(): void {
   try {
     audioCtx ??= new AudioContext()
-    if (audioCtx.state === "suspended") void audioCtx.resume()
+    if (audioCtx.state === "suspended") audioCtx.resume().catch(() => {})
     const t = audioCtx.currentTime
     for (const [freq, start] of [
       [880, 0],

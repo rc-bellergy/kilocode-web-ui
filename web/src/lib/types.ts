@@ -168,6 +168,14 @@ export interface ProviderList {
   connected: string[]
 }
 
+/** kilo-web's own model favourites (server-side JSON storage, one global list). */
+export interface Favourite {
+  providerID: string
+  modelID: string
+  name?: string
+  addedAt: number
+}
+
 export interface Health {
   kilo: { mode: "spawned" | "attached"; ready: boolean; url: string | null; error: string | null }
 }

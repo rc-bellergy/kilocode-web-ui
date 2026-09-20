@@ -9,3 +9,5 @@ blob-report/
 .kilo/node_modules/
 .kilo/worktrees/
 .DS_Store
+# kilo-web runtime state (model favourites) — personal data, never commit
+/data/

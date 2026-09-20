@@ -99,21 +99,37 @@ const AGENTS = [
   { name: "unit-test", displayName: null, description: "Subagent", mode: "subagent", hidden: false, deprecated: false },
 ]
 
-const PROVIDERS = {
-  all: [
-    {
-      id: "mock-provider",
-      name: "Mock Provider",
-      source: "mock",
-      models: {
-        "mock-tiny": { id: "mock-tiny", providerID: "mock-provider", name: "Mock Tiny", status: "active", limit: { context: 128_000 } },
-        "mock-large": { id: "mock-large", providerID: "mock-provider", name: "Mock Large", status: "active", limit: { context: 1_000_000 } },
-      },
+const PROJECT_B = "/tmp/kilo-e2e/project-b"
+
+// Two providers × three models each. project-b intentionally misses
+// "mock-alt" so the /models page and composer dropdown exercise the
+// "not in this project" intersection behaviour.
+const PROVIDERS_ALL = [
+  {
+    id: "mock-provider",
+    name: "Mock Provider",
+    source: "mock",
+    models: {
+      "mock-tiny": { id: "mock-tiny", providerID: "mock-provider", name: "Mock Tiny", status: "active", limit: { context: 128_000 } },
+      "mock-mini": { id: "mock-mini", providerID: "mock-provider", name: "Mock Mini", status: "active", limit: { context: 256_000 } },
+      "mock-large": { id: "mock-large", providerID: "mock-provider", name: "Mock Large", status: "active", limit: { context: 1_000_000 } },
     },
-  ],
-  default: { "mock-provider": "mock-tiny" },
-  connected: ["mock-provider"],
-  failed: [],
+  },
+  {
+    id: "mock-alt",
+    name: "Mock Alt",
+    source: "mock",
+    models: {
+      "alt-one": { id: "alt-one", providerID: "mock-alt", name: "Alt One", status: "active", limit: { context: 128_000 } },
+      "alt-two": { id: "alt-two", providerID: "mock-alt", name: "Alt Two", status: "active", limit: { context: 128_000 } },
+      "alt-three": { id: "alt-three", providerID: "mock-alt", name: "Alt Three", status: "active", limit: { context: 128_000 } },
+    },
+  },
+]
+
+function providersFor(directory: string | null) {
+  const all = directory === PROJECT_B ? PROVIDERS_ALL.filter((p) => p.id === "mock-provider") : PROVIDERS_ALL
+  return { all, default: { "mock-provider": "mock-tiny" }, connected: all.map((p) => p.id), failed: [] }
 }
 
 // ---------------------------------------------------------------- server
@@ -698,7 +714,7 @@ export function startMockKilo(opts: MockKiloOptions = {}): Promise<MockKilo> {
         return
       }
       if (url.pathname === "/provider" && req.method === "GET") {
-        json(res, 200, PROVIDERS)
+        json(res, 200, providersFor(directory))
         return
       }
 

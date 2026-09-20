@@ -111,6 +111,9 @@ export function mockState(): Promise<{
 
 export async function startBackend(): Promise<void> {
   fs.mkdirSync(PID_DIR, { recursive: true })
+  // kilo-web's own state (favourites) lives outside the repo in tests.
+  const dataDir = path.join(PID_DIR, "data")
+  fs.rmSync(path.join(dataDir, "favourites.json"), { force: true })
   const child = spawn(
     process.execPath,
     ["--import", "tsx", path.join(ROOT, "server/src/index.ts")],
@@ -123,6 +126,7 @@ export async function startBackend(): Promise<void> {
         HOST: "127.0.0.1",
         KILO_WEB_PASSWORD: "kilo",
         KILO_SERVER_URL: MOCK_KILO_URL,
+        KILO_WEB_DATA_DIR: dataDir,
         // server/src/env.ts loads the repo-root .env; neutralize the keys that
         // would otherwise make tests depend on this machine's private config
         // (e.g. COOKIE_SECURE=1 or an ALLOWED_IPS without loopback breaks e2e).

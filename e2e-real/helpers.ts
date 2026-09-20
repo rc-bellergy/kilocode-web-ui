@@ -78,11 +78,14 @@ export function startBackend(opts: {
   env?: Record<string, string>
 }): RealBackend {
   fs.mkdirSync(PID_DIR, { recursive: true })
+  // kilo-web's own state (favourites) stays out of the repo in real e2e too.
+  fs.rmSync(path.join(PID_DIR, "data", "favourites.json"), { force: true })
   const env: Record<string, string> = {
     ...process.env,
     PORT: String(opts.port),
     HOST: "127.0.0.1",
     KILO_WEB_PASSWORD: REAL_PASSWORD,
+    KILO_WEB_DATA_DIR: path.join(PID_DIR, "data"),
     ...(opts.attach ? { KILO_SERVER_URL: opts.attach } : {}),
     ...(opts.cookieSecure ? { COOKIE_SECURE: "1" } : {}),
     ...opts.env,

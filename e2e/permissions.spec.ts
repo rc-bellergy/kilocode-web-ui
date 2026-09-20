@@ -31,7 +31,7 @@ test.describe("E2E-6 permission inbox", () => {
     // Allow once (panel stays open and live-updates with new requests).
     await panel.getByRole("button", { name: "Approve" }).click()
     await expect(inboxButton.locator("span", { hasText: "1" })).toHaveCount(0)
-    let { replies } = await mockState()
+    const { replies } = await mockState()
     expect(replies.at(-1)).toMatchObject({ requestID: request.id, reply: "once" })
     await expect(panel.getByText("Nothing pending")).toBeVisible()
 
@@ -40,8 +40,10 @@ test.describe("E2E-6 permission inbox", () => {
     const alwaysBtn = panel.getByRole("button", { name: "Always allow" })
     await expect(alwaysBtn).toBeVisible({ timeout: 10_000 })
     await alwaysBtn.click()
-    ;({ replies } = await mockState())
-    expect(replies.at(-1)).toMatchObject({ requestID: request2.id, reply: "always" })
+    // The reply POST lands asynchronously; poll instead of racing it.
+    await expect
+      .poll(async () => (await mockState()).replies.at(-1))
+      .toMatchObject({ requestID: request2.id, reply: "always" })
     await expect(panel.getByText("Nothing pending")).toBeVisible()
 
     // Reject with feedback.
@@ -52,8 +54,9 @@ test.describe("E2E-6 permission inbox", () => {
     await panel.getByPlaceholder(/Optional feedback/).fill("use a safer command")
     await panel.getByRole("button", { name: "Send rejection" }).click()
     await expect(inboxButton.locator("span", { hasText: "1" })).toHaveCount(0)
-    ;({ replies } = await mockState())
-    expect(replies.at(-1)).toMatchObject({ requestID: request3.id, reply: "reject", message: "use a safer command" })
+    await expect
+      .poll(async () => (await mockState()).replies.at(-1))
+      .toMatchObject({ requestID: request3.id, reply: "reject", message: "use a safer command" })
   })
 
   test("drawer overlays the full viewport and closes via the close button", async ({ page }) => {

@@ -54,8 +54,9 @@ test.describe("E2E-8 agent questions (question.v2)", () => {
     await form.getByTestId("custom-answer").fill("MariaDB")
     await form.getByRole("button", { name: "Submit" }).click()
 
-    const { questionReplies } = await mockState()
-    expect(questionReplies.at(-1)?.answers).toEqual([["MariaDB"]])
+    await expect
+      .poll(async () => (await mockState()).questionReplies.at(-1))
+      .toMatchObject({ answers: [["MariaDB"]] })
   })
 
   test("multiple-select questions submit every checked label", async ({ page }) => {
@@ -69,8 +70,9 @@ test.describe("E2E-8 agent questions (question.v2)", () => {
     await form.getByRole("checkbox", { name: "Billing" }).check()
     await form.getByRole("button", { name: "Submit" }).click()
 
-    const { questionReplies } = await mockState()
-    expect(questionReplies.at(-1)?.answers).toEqual([["Auth", "Billing"]])
+    await expect
+      .poll(async () => (await mockState()).questionReplies.at(-1))
+      .toMatchObject({ answers: [["Auth", "Billing"]] })
   })
 
   test("custom: false hides the custom answer option", async ({ page }) => {
@@ -92,8 +94,9 @@ test.describe("E2E-8 agent questions (question.v2)", () => {
     await expect(form).toBeVisible({ timeout: 10_000 })
     await form.getByRole("button", { name: "Dismiss" }).click()
 
-    const { questionReplies } = await mockState()
-    expect(questionReplies.at(-1)).toMatchObject({ answers: null, rejected: true })
+    await expect
+      .poll(async () => (await mockState()).questionReplies.at(-1))
+      .toMatchObject({ answers: null, rejected: true })
 
     const card = page.getByTestId("question-tool-card")
     await expect(card.getByText("dismissed", { exact: true })).toBeVisible({ timeout: 10_000 })
@@ -113,8 +116,9 @@ test.describe("E2E-8 agent questions (question.v2)", () => {
     await form.getByRole("radio", { name: /SQLite/ }).check()
     await form.getByRole("button", { name: "Submit" }).click()
 
-    const { questionReplies } = await mockState()
-    expect(questionReplies.at(-1)).toMatchObject({ requestID: request.id, answers: [["SQLite"]] })
+    await expect
+      .poll(async () => (await mockState()).questionReplies.at(-1))
+      .toMatchObject({ requestID: request.id, answers: [["SQLite"]] })
     await expect(page.locator("[data-question-id]")).toHaveCount(0)
   })
 

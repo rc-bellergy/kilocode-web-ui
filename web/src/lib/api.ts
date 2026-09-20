@@ -59,6 +59,7 @@ export const api = {
     questions: (d: string | null) => json<import("./types").QuestionRequest[]>(`/api/kilo/question${dir(d)}`),
     agents: (d: string | null) => json<import("./types").Agent[]>(`/api/kilo/agent${dir(d)}`),
     providers: (d: string | null) => json<import("./types").ProviderList>(`/api/kilo/provider${dir(d)}`),
+    favourites: () => json<{ favourites: import("./types").Favourite[] }>("/api/favourites"),
   },
   post: {
     login: (password: string) =>
@@ -101,6 +102,14 @@ export const api = {
       }),
     questionReject: (d: string | null, requestID: string) =>
       request(`/api/kilo/question/${requestID}/reject${dir(d)}`, { method: "POST" }),
+  },
+  put: {
+    favourites: (list: import("./types").Favourite[]) =>
+      json<{ favourites: import("./types").Favourite[] }>("/api/favourites", {
+        method: "PUT",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ favourites: list }),
+      }),
   },
   del: {
     session: (d: string | null, sessionID: string) => request(`/api/kilo/session/${sessionID}${dir(d)}`, { method: "DELETE" }),

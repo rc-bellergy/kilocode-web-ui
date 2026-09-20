@@ -23,3 +23,6 @@ services:
     extra_hosts:
       # Not needed on OrbStack (native support); kept for portability to Linux.
       - "host.docker.internal:host-gateway"
+    volumes:
+      # Model favourites and other kilo-web state; survives container rebuilds.
+      - "./data:/app/data"

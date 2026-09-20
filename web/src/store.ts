@@ -4,6 +4,7 @@ import { connectEvents, disconnectEvents } from "./lib/events"
 import { loadNotifyPrefs, systemNotify } from "./lib/notify"
 import type {
   Agent,
+  Favourite,
   Health,
   KiloEvent,
   Message,
@@ -36,6 +37,7 @@ interface AppState {
   agents: Agent[]
   providers: ProviderInfo[]
   defaultModelIDs: Record<string, string>
+  favourites: Favourite[]
 
   // live data
   sessions: SessionInfo[]
@@ -66,6 +68,9 @@ interface AppState {
   refreshPermissions: () => Promise<void>
   refreshStatuses: () => Promise<void>
   refreshAgentsAndProviders: () => Promise<void>
+  refreshFavourites: () => Promise<void>
+  saveFavourites: (next: Favourite[]) => Promise<void>
+  toggleFavourite: (providerID: string, modelID: string, name?: string) => Promise<void>
   openSession: (id: string) => Promise<void>
   closeSession: () => void
   createSession: () => Promise<string | null>
@@ -210,6 +215,7 @@ export const useStore = create<AppState>((set, get) => ({
   agents: [],
   providers: [],
   defaultModelIDs: {},
+  favourites: [],
   sessions: [],
   statuses: {},
   permissions: [],
@@ -232,6 +238,7 @@ export const useStore = create<AppState>((set, get) => ({
       get().refreshPermissions(),
       get().refreshQuestions(),
       get().refreshAgentsAndProviders(),
+      get().refreshFavourites(),
     ])
     get().setDirectory(get().directory)
     set({ booted: true })
@@ -360,6 +367,36 @@ export const useStore = create<AppState>((set, get) => ({
     } catch (err) {
       if (!(err instanceof ApiError && err.status === 401)) get().showToast(errText(err))
     }
+  },
+
+  async refreshFavourites() {
+    try {
+      const { favourites } = await api.get.favourites()
+      set({ favourites })
+    } catch (err) {
+      if (!(err instanceof ApiError && err.status === 401)) get().showToast(errText(err))
+    }
+  },
+
+  async saveFavourites(next) {
+    const prev = get().favourites
+    set({ favourites: next })
+    try {
+      await api.put.favourites(next)
+    } catch (err) {
+      if (err instanceof ApiError && err.status === 401) return
+      set({ favourites: prev })
+      get().showToast(`Could not save favourites: ${errText(err)}`)
+    }
+  },
+
+  async toggleFavourite(providerID, modelID, name) {
+    const { favourites } = get()
+    const isFav = favourites.some((f) => f.providerID === providerID && f.modelID === modelID)
+    const next = isFav
+      ? favourites.filter((f) => !(f.providerID === providerID && f.modelID === modelID))
+      : [...favourites, { providerID, modelID, name, addedAt: Date.now() }]
+    await get().saveFavourites(next)
   },
 
   async openSession(id) {
@@ -685,6 +722,7 @@ function gapFill(set: (partial: Partial<AppState>) => void, get: () => AppState)
   void get().refreshPermissions()
   void get().refreshQuestions()
   void get().refreshAgentsAndProviders()
+  void get().refreshFavourites()
   if (get().openSessionID) void refreshOpenMessages(set, get)
   // P0-3: projects missed while kilo was warming up never load —refetch
   // them; refreshProjects applies the directory fallback and re-points the

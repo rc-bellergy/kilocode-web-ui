@@ -22,11 +22,35 @@ test.describe("E2E-5R composer settings (real agents/models)", () => {
       expect(pick).toBeTruthy()
       await modeSelect.selectOption({ label: pick! })
 
+      // The model dropdown only lists favourites — star the first available
+      // model through the REST API, then reload so the store picks it up.
+      const favourite = await page.evaluate(async (dir) => {
+        const res = await fetch(`/api/kilo/provider?directory=${encodeURIComponent(dir)}`, { credentials: "same-origin" })
+        const list = (await res.json()) as {
+          all: { id: string; name: string; models: Record<string, { id: string; name: string }> }[]
+        }
+        const provider = list.all.find((p) => Object.keys(p.models).length > 0)
+        if (!provider) return null
+        const model = Object.values(provider.models)[0]!
+        const put = await fetch("/api/favourites", {
+          method: "PUT",
+          headers: { "content-type": "application/json" },
+          credentials: "same-origin",
+          body: JSON.stringify({
+            favourites: [{ providerID: provider.id, modelID: model.id, name: model.name, addedAt: Date.now() }],
+          }),
+        })
+        return put.ok ? `${provider.id}/${encodeURIComponent(model.id)}` : null
+      }, dir)
+      expect(favourite).toBeTruthy()
+      await page.reload()
+      await expect(page.getByRole("button", { name: "Send" })).toBeVisible({ timeout: 30_000 })
+
       await expect
         .poll(async () => await modelSelect.locator("option").count(), { timeout: 30_000 })
         .toBeGreaterThan(1)
       const modelValues = await modelSelect.locator("option").evaluateAll((els) => els.map((el) => el.value))
-      const nonDefault = modelValues.find((v) => v)
+      const nonDefault = modelValues.find((v) => v && v !== "__manage__")
       expect(nonDefault).toBeTruthy()
       await modelSelect.selectOption(nonDefault!)
 
