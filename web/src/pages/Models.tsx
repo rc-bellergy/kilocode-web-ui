@@ -23,6 +23,7 @@ export default function Models() {
   const providers = useStore((s) => s.providers)
   const favourites = useStore((s) => s.favourites)
   const toggleFavourite = useStore((s) => s.toggleFavourite)
+  const [providerSearch, setProviderSearch] = useState("")
   const [search, setSearch] = useState("")
 
   const connected = providers.filter((p) => Object.keys(p.models).length > 0)
@@ -31,19 +32,16 @@ export default function Models() {
   const isAvailable = (providerID: string, modelID: string) => connected.some((p) => p.id === providerID && p.models[modelID])
 
   const sortedFavourites = [...favourites].sort((a, b) => a.addedAt - b.addedAt)
+  const pq = providerSearch.trim().toLowerCase()
   const q = search.trim().toLowerCase()
-  const filteredProviders = connected
+  const providersMatching = connected.filter(
+    (p) => !pq || p.name.toLowerCase().includes(pq) || p.id.toLowerCase().includes(pq),
+  )
+  const filteredProviders = providersMatching
     .map((p) => ({
       provider: p,
       models: Object.values(p.models)
-        .filter(
-          (m) =>
-            !q ||
-            m.name.toLowerCase().includes(q) ||
-            m.id.toLowerCase().includes(q) ||
-            p.name.toLowerCase().includes(q) ||
-            p.id.toLowerCase().includes(q),
-        )
+        .filter((m) => !q || m.name.toLowerCase().includes(q) || m.id.toLowerCase().includes(q))
         .sort((a, b) => a.name.localeCompare(b.name)),
     }))
     .filter(({ models }) => models.length > 0)
@@ -105,18 +103,32 @@ export default function Models() {
       <section aria-label="All models">
         <div className="mb-2 flex items-center justify-between gap-3">
           <h2 className="text-sm font-semibold uppercase tracking-wide text-zinc-500">All models</h2>
-          <input
-            type="search"
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            placeholder="Search models or provider…"
-            aria-label="Search models"
-            className="w-56 rounded-lg border border-zinc-700 bg-zinc-900 px-2.5 py-1.5 text-sm text-zinc-200 outline-none placeholder:text-zinc-600 focus:border-sky-500"
-          />
+          <div className="flex items-center gap-2">
+            <input
+              type="search"
+              value={providerSearch}
+              onChange={(e) => setProviderSearch(e.target.value)}
+              placeholder="Search providers…"
+              aria-label="Search providers"
+              className="w-44 rounded-lg border border-zinc-700 bg-zinc-900 px-2.5 py-1.5 text-sm text-zinc-200 outline-none placeholder:text-zinc-600 focus:border-sky-500"
+            />
+            <input
+              type="search"
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              placeholder="Search models…"
+              aria-label="Search models"
+              className="w-44 rounded-lg border border-zinc-700 bg-zinc-900 px-2.5 py-1.5 text-sm text-zinc-200 outline-none placeholder:text-zinc-600 focus:border-sky-500"
+            />
+          </div>
         </div>
         {filteredProviders.length === 0 ? (
           <p className="rounded-xl border border-dashed border-zinc-800 p-6 text-center text-sm text-zinc-500">
-            {connected.length === 0 ? "No providers loaded for this project yet." : "No models match the search."}
+            {connected.length === 0
+              ? "No providers loaded for this project yet."
+              : providersMatching.length === 0
+                ? "No providers match the search."
+                : "No models match the search."}
           </p>
         ) : (
           <div className="space-y-4">
