@@ -24,7 +24,6 @@ export default function Models() {
   const favourites = useStore((s) => s.favourites)
   const toggleFavourite = useStore((s) => s.toggleFavourite)
   const [search, setSearch] = useState("")
-  const [providerFilter, setProviderFilter] = useState("")
 
   const connected = providers.filter((p) => Object.keys(p.models).length > 0)
   const isFavourite = (providerID: string, modelID: string) =>
@@ -34,7 +33,6 @@ export default function Models() {
   const sortedFavourites = [...favourites].sort((a, b) => a.addedAt - b.addedAt)
   const q = search.trim().toLowerCase()
   const filteredProviders = connected
-    .filter((p) => !providerFilter || p.id === providerFilter)
     .map((p) => ({
       provider: p,
       models: Object.values(p.models)
@@ -107,33 +105,18 @@ export default function Models() {
       <section aria-label="All models">
         <div className="mb-2 flex items-center justify-between gap-3">
           <h2 className="text-sm font-semibold uppercase tracking-wide text-zinc-500">All models</h2>
-          <div className="flex items-center gap-2">
-            <select
-              value={providerFilter}
-              onChange={(e) => setProviderFilter(e.target.value)}
-              aria-label="Filter by provider"
-              className="rounded-lg border border-zinc-700 bg-zinc-900 px-2.5 py-1.5 text-sm text-zinc-200 outline-none focus:border-sky-500"
-            >
-              <option value="">All providers</option>
-              {connected.map((p) => (
-                <option key={p.id} value={p.id}>
-                  {p.name || p.id}
-                </option>
-              ))}
-            </select>
-            <input
-              type="search"
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-              placeholder="Search models…"
-              aria-label="Search models"
-              className="w-56 rounded-lg border border-zinc-700 bg-zinc-900 px-2.5 py-1.5 text-sm text-zinc-200 outline-none placeholder:text-zinc-600 focus:border-sky-500"
-            />
-          </div>
+          <input
+            type="search"
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            placeholder="Search models or provider…"
+            aria-label="Search models"
+            className="w-56 rounded-lg border border-zinc-700 bg-zinc-900 px-2.5 py-1.5 text-sm text-zinc-200 outline-none placeholder:text-zinc-600 focus:border-sky-500"
+          />
         </div>
         {filteredProviders.length === 0 ? (
           <p className="rounded-xl border border-dashed border-zinc-800 p-6 text-center text-sm text-zinc-500">
-            {connected.length === 0 ? "No providers loaded for this project yet." : "No models match the filters."}
+            {connected.length === 0 ? "No providers loaded for this project yet." : "No models match the search."}
           </p>
         ) : (
           <div className="space-y-4">
