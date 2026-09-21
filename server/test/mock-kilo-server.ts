@@ -365,6 +365,38 @@ export function startMockKilo(opts: MockKiloOptions = {}): Promise<MockKilo> {
       await sleep()
     }
 
+    // suggest tool (completes immediately — it is a UI affordance, not a gate)
+    if (wants("+SUGGEST")) {
+      const input = {
+        suggest: "Tool card rework is complete and e2e-verified — consider an independent review pass.",
+        actions: [
+          { label: "Review changes", description: "Independent review of the new tool card rendering", prompt: "/review uncommitted" },
+          { label: "Run tests", description: "Re-run the e2e chat suite", prompt: "npm test e2e/chat.spec.ts" },
+        ],
+      }
+      const tool: Record<string, unknown> = {
+        id: makeID("prt_"),
+        sessionID,
+        messageID: assistant.info.id,
+        type: "tool",
+        callID: `call${ascendingHex()}${randomTail()}`,
+        tool: "suggest",
+        state: { status: "pending", input, raw: JSON.stringify(input) },
+      }
+      assistant.parts.push(tool)
+      emit("message.part.updated", { sessionID, part: { ...tool }, time: Date.now() })
+      await sleep()
+      tool.state = {
+        status: "completed",
+        input,
+        output: "Suggested 2 actions",
+        title: "suggest",
+        time: { start: Date.now(), end: Date.now() },
+      }
+      emit("message.part.updated", { sessionID, part: { ...tool }, time: Date.now() })
+      await sleep()
+    }
+
     // permission gate: wait until replied
     if (wants("+PERM")) {
       const request: Record<string, unknown> = {

@@ -1,5 +1,5 @@
 import { expect, test } from "@playwright/test"
-import { control } from "./mock-kilo-process"
+import { control, mockState } from "./mock-kilo-process"
 import { createMockSession, login, openSession, resetMock, sendPrompt } from "./helpers"
 
 test.beforeEach(async ({ page }) => {
@@ -38,10 +38,13 @@ test.describe("E2E-4 chat transcript", () => {
     const sessionID = await createMockSession()
     await openSession(page, sessionID)
     await sendPrompt(page, "run a tool +TOOL")
+    // VS Code-style Shell card: icon + "Shell · <description>", then one
+    // terminal block with the highlighted command and the raw output inline.
     const card = page.locator("div.rounded-xl", { hasText: "echo mock" })
     await expect(card).toBeVisible()
-    await expect(card.getByText("completed")).toBeVisible()
-    await card.getByRole("button", { name: /output/i }).click()
+    await expect(card.getByText("Shell", { exact: true })).toBeVisible()
+    await expect(card.getByText("$", { exact: true })).toBeVisible()
+    await expect(card.getByText("echo mock").first()).toBeVisible()
     await expect(card.getByText("mock tool output")).toBeVisible()
   })
 
@@ -59,6 +62,33 @@ test.describe("E2E-4 chat transcript", () => {
     await expect(page.getByText("chart.png")).toBeVisible()
     await expect(page.getByText("subtask · unit-test")).toBeVisible()
     await expect(page.getByText("Delegates the sub-thing")).toBeVisible()
+  })
+
+  test("suggest card actions send their prompt as a new user message", async ({ page }) => {
+    const sessionID = await createMockSession()
+    await openSession(page, sessionID)
+    await sendPrompt(page, "done +SUGGEST")
+
+    const card = page.getByTestId("suggest-tool-card")
+    await expect(card).toBeVisible()
+    await expect(card.getByText(/consider an independent review pass/)).toBeVisible()
+
+    // Buttons unlock only once the suggesting turn has finished (session idle).
+    const review = card.getByRole("button", { name: /review changes/i })
+    await expect(page.getByRole("button", { name: "Send", exact: true })).toBeVisible()
+    await review.click()
+
+    // The action's prompt is sent verbatim as a new user message.
+    await expect
+      .poll(async () =>
+        (await mockState()).prompts.some((p) => p.body.parts.some((x) => x.text === "/review uncommitted")),
+      )
+      .toBe(true)
+    // The used action is marked sent and disabled (the follow-up turn's user
+    // message keeps it disabled even after a reload).
+    await expect(review).toBeDisabled()
+    await expect(review.getByText("sent")).toBeVisible()
+    await expect(card.getByRole("button", { name: /run tests/i })).toBeEnabled()
   })
 
   test("markdown renders and <script> is sanitized away (XSS)", async ({ page }) => {

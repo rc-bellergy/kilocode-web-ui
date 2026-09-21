@@ -17,7 +17,7 @@ function Markdown({ text }: { text: string }) {
 }
 
 function Json({ value, label }: { value: unknown; label: string }) {
-  const [open, setOpen] = useState(false)
+  const [open, setOpen] = useState(true)
   const text = useMemo(() => {
     if (typeof value === "string") return value
     try {
@@ -43,31 +43,359 @@ function Json({ value, label }: { value: unknown; label: string }) {
   )
 }
 
+/** VS Code-style display names for tool cards ("bash" renders as "Shell"). */
+function toolDisplayName(tool: string): string {
+  if (tool === "bash") return "Shell"
+  return tool.charAt(0).toUpperCase() + tool.slice(1)
+}
+
+function ToolIcon({ tool }: { tool: string }) {
+  const p = {
+    width: 14,
+    height: 14,
+    viewBox: "0 0 24 24",
+    fill: "none",
+    stroke: "currentColor",
+    strokeWidth: 2,
+    strokeLinecap: "round" as const,
+    strokeLinejoin: "round" as const,
+  }
+  switch (tool) {
+    case "bash":
+      return (
+        <svg {...p}>
+          <path d="m4 17 6-6-6-6" />
+          <path d="M12 19h8" />
+        </svg>
+      )
+    case "read":
+      return (
+        <svg {...p}>
+          <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
+          <path d="M14 2v6h6" />
+        </svg>
+      )
+    case "edit":
+      return (
+        <svg {...p}>
+          <path d="M17 3a2.85 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z" />
+        </svg>
+      )
+    case "write":
+      return (
+        <svg {...p}>
+          <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
+          <path d="M14 2v6h6" />
+          <path d="M12 18v-6" />
+          <path d="m9 15 3 3 3-3" />
+        </svg>
+      )
+    case "glob":
+    case "grep":
+      return (
+        <svg {...p}>
+          <circle cx="11" cy="11" r="8" />
+          <path d="m21 21-4.3-4.3" />
+        </svg>
+      )
+    case "task":
+      return (
+        <svg {...p}>
+          <path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2" />
+          <circle cx="9" cy="7" r="4" />
+          <path d="M22 21v-2a4 4 0 0 0-3-3.87" />
+          <path d="M16 3.13a4 4 0 0 1 0 7.75" />
+        </svg>
+      )
+    case "webfetch":
+      return (
+        <svg {...p}>
+          <circle cx="12" cy="12" r="10" />
+          <path d="M12 2a14.5 14.5 0 0 0 0 20 14.5 14.5 0 0 0 0-20" />
+          <path d="M2 12h20" />
+        </svg>
+      )
+    case "todowrite":
+    case "todoread":
+      return (
+        <svg {...p}>
+          <path d="m3 17 2 2 4-4" />
+          <path d="m3 7 2 2 4-4" />
+          <path d="M13 6h8" />
+          <path d="M13 12h8" />
+          <path d="M13 18h8" />
+        </svg>
+      )
+    case "suggest":
+      return (
+        <svg {...p}>
+          <path d="M15 14c.2-1 0-1.74-.78-2.42-.91-.8-1.72-1.59-1.72-3.08a5 5 0 0 1 10 0c0 1.49-.81 2.28-1.72 3.08-.78.68-.98 1.42-.78 2.42" />
+          <path d="M9 18h6" />
+          <path d="M10 22h4" />
+        </svg>
+      )
+    default:
+      return (
+        <svg {...p}>
+          <path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z" />
+        </svg>
+      )
+  }
+}
+
+/** Icon slot in the card header: spinner while running, red x on error. */
+function ToolStatusIcon({ status, tool }: { status: ToolState["status"]; tool: string }) {
+  if (status === "running") {
+    return <span className="size-3.5 shrink-0 animate-spin rounded-full border-2 border-sky-400 border-t-transparent" />
+  }
+  if (status === "error") {
+    return (
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" className="shrink-0 text-red-400">
+        <circle cx="12" cy="12" r="10" />
+        <path d="m15 9-6 6M9 9l6 6" />
+      </svg>
+    )
+  }
+  return (
+    <span className={`shrink-0 ${status === "pending" ? "text-zinc-600" : "text-zinc-400"}`}>
+      <ToolIcon tool={tool} />
+    </span>
+  )
+}
+
+type BashToken = { text: string; cls?: string }
+
+// Order matters: strings first (so operators inside quotes are not split),
+// then operators, flags (with leading space so "-n" only matches as a flag),
+// and $variables / $() command substitution.
+const BASH_TOKEN_RE = /('(?:[^'\\]|\\.)*'|"(?:[^"\\]|\\.)*")|(&&|\|\||[|;&><])|(\s--?[A-Za-z][A-Za-z0-9-]*)|(\$[A-Za-z_{][A-Za-z0-9_}]*|\$\()/g
+
+function tokenizeCommand(cmd: string): BashToken[] {
+  const tokens: BashToken[] = []
+  let last = 0
+  for (const m of cmd.matchAll(BASH_TOKEN_RE)) {
+    const idx = m.index ?? 0
+    if (idx > last) tokens.push({ text: cmd.slice(last, idx) })
+    if (m[1]) tokens.push({ text: m[0], cls: "text-amber-300" })
+    else if (m[2]) tokens.push({ text: m[0], cls: "text-violet-400" })
+    else if (m[3]) tokens.push({ text: m[0], cls: "text-cyan-300" })
+    else if (m[4]) tokens.push({ text: m[0], cls: "text-emerald-300" })
+    last = idx + m[0].length
+  }
+  if (last < cmd.length) tokens.push({ text: cmd.slice(last) })
+  return tokens
+}
+
+function CommandBlock({ command }: { command: string }) {
+  const tokens = useMemo(() => tokenizeCommand(command), [command])
+  return (
+    <pre className="overflow-x-auto text-xs leading-relaxed text-zinc-200">
+      <span className="text-sky-400">$ </span>
+      {tokens.map((t, i) =>
+        t.cls ? (
+          <span key={i} className={t.cls}>
+            {t.text}
+          </span>
+        ) : (
+          <span key={i}>{t.text}</span>
+        ),
+      )}
+    </pre>
+  )
+}
+
+/** Shared card header: (icon) ToolName · description — VS Code parity. */
+function ToolCardHeader({ part, status }: { part: Extract<Part, { type: "tool" }>; status: ToolState["status"] }) {
+  const title = "title" in part.state ? part.state.title : undefined
+  return (
+    <div className="flex items-center gap-2">
+      <ToolStatusIcon status={status} tool={part.tool} />
+      <span
+        className={`text-sm font-medium ${status === "error" ? "text-red-300" : "text-zinc-200"}`}
+        title={part.tool}
+      >
+        {toolDisplayName(part.tool)}
+      </span>
+      {title && (
+        <>
+          <span className="text-zinc-600">·</span>
+          <span className="truncate text-sm text-zinc-500" title={title}>
+            {title}
+          </span>
+        </>
+      )}
+    </div>
+  )
+}
+
 function ToolCard({ part }: { part: Extract<Part, { type: "tool" }> }) {
   const state: ToolState = part.state
   const status = state.status
-  const badge =
-    status === "completed"
-      ? "bg-emerald-500/15 text-emerald-300"
-      : status === "running"
-        ? "bg-sky-500/15 text-sky-300"
-        : status === "error"
-          ? "bg-red-500/15 text-red-300"
-          : "bg-zinc-500/15 text-zinc-400"
-  const title =
-    status === "completed" ? state.title : status === "running" ? (state.title ?? part.tool) : part.tool
+
+  if (part.tool === "bash") return <BashToolCard part={part} />
+  if (part.tool === "suggest") return <SuggestToolCard part={part} />
 
   return (
     <div className="rounded-xl border border-zinc-800 bg-zinc-900/70 p-3">
-      <div className="flex items-center gap-2">
-        <span className={`rounded px-1.5 py-0.5 text-[10px] font-semibold uppercase ${badge}`}>
-          {status === "running" ? "run" : status}
-        </span>
-        <span className="truncate text-sm font-medium text-zinc-200" title={part.tool}>
-          {title}
-        </span>
-      </div>
+      <ToolCardHeader part={part} status={status} />
       <Json value={state.input} label="input" />
+      {status === "completed" && state.output && <Json value={state.output} label="output" />}
+      {status === "error" && (
+        <pre className="mt-2 max-h-60 overflow-auto whitespace-pre-wrap rounded-lg bg-red-950/40 p-2 text-xs text-red-300">
+          {state.error}
+        </pre>
+      )}
+    </div>
+  )
+}
+
+/** Shell card: command and output only, in one terminal block (VS Code parity). */
+function BashToolCard({ part }: { part: Extract<Part, { type: "tool" }> }) {
+  const state: ToolState = part.state
+  const status = state.status
+  const command = typeof state.input.command === "string" ? state.input.command : null
+  const output = status === "completed" ? state.output : undefined
+
+  return (
+    <div className="rounded-xl border border-zinc-800 bg-zinc-900/70 p-3">
+      <ToolCardHeader part={part} status={status} />
+      {command !== null ? (
+        <div className="mt-2 rounded-lg border border-zinc-800 bg-zinc-950 p-2.5">
+          <CommandBlock command={command} />
+          {output !== undefined && output.length > 0 && (
+            <pre className="mt-1.5 max-h-96 overflow-auto whitespace-pre-wrap text-xs leading-relaxed text-zinc-300">
+              {output}
+            </pre>
+          )}
+        </div>
+      ) : (
+        <Json value={state.input} label="input" />
+      )}
+      {status === "error" && (
+        <pre className="mt-2 max-h-60 overflow-auto whitespace-pre-wrap rounded-lg bg-red-950/40 p-2 text-xs text-red-300">
+          {state.error}
+        </pre>
+      )}
+    </div>
+  )
+}
+
+/** A suggest action as sent by the agent's `suggest` tool. */
+interface SuggestAction {
+  label: string
+  description?: string
+  prompt: string
+}
+
+/** Extract the suggestion text and valid actions from a suggest tool part's input. */
+function suggestPayload(part: Extract<Part, { type: "tool" }>): { suggest: string; actions: SuggestAction[] } {
+  const input = part.state.input as { suggest?: unknown; actions?: unknown }
+  const suggest = typeof input.suggest === "string" ? input.suggest : ""
+  const actions = Array.isArray(input.actions)
+    ? input.actions.filter(
+        (a): a is SuggestAction =>
+          !!a &&
+          typeof a === "object" &&
+          typeof (a as SuggestAction).label === "string" &&
+          typeof (a as SuggestAction).prompt === "string",
+      )
+    : []
+  return { suggest, actions }
+}
+
+/**
+ * The agent's `suggest` tool call (a UI affordance, not a permission gate):
+ * renders the suggestion text with one button per action. Clicking a button
+ * sends its prompt as a new user message to the session — the same path as
+ * the composer, with no agent/model override. An action whose prompt is
+ * already in the transcript (this click or an earlier one) renders as used.
+ */
+function SuggestToolCard({ part }: { part: Extract<Part, { type: "tool" }> }) {
+  const state: ToolState = part.state
+  const status = state.status
+  const sendPrompt = useStore((s) => s.sendPrompt)
+  const messages = useStore((s) => s.messages)
+  const sessionStatus = useStore((s) => s.statuses[part.sessionID])
+  const [sentLabel, setSentLabel] = useState<string | null>(null)
+  const { suggest, actions } = suggestPayload(part)
+
+  const sentPrompts = useMemo(() => {
+    const set = new Set<string>()
+    for (const m of messages) {
+      if (m.info.role !== "user") continue
+      for (const p of m.parts) if (p.type === "text") set.add(p.text.trim())
+    }
+    return set
+  }, [messages])
+
+  const busy = sessionStatus?.type === "busy" || sessionStatus?.type === "retry"
+  const isUsed = (a: SuggestAction) => sentLabel === a.label || sentPrompts.has(a.prompt.trim())
+
+  async function run(a: SuggestAction) {
+    if (isUsed(a) || busy) return
+    setSentLabel(a.label)
+    await sendPrompt(a.prompt, { agent: null, model: null })
+  }
+
+  return (
+    <div className="rounded-xl border border-zinc-800 bg-zinc-900/70 p-3" data-testid="suggest-tool-card">
+      <ToolCardHeader part={part} status={status} />
+      {suggest && <div className="mt-2 text-sm text-zinc-300">{suggest}</div>}
+      {actions.length > 0 ? (
+        <div className="mt-2.5 space-y-1.5">
+          {actions.map((a) => {
+            const used = isUsed(a)
+            return (
+              <button
+                key={a.label}
+                onClick={() => void run(a)}
+                disabled={used || busy}
+                className={`flex w-full items-start gap-2 rounded-lg border px-3 py-2 text-left transition ${
+                  used
+                    ? "border-zinc-800 bg-zinc-950/60 opacity-60"
+                    : "border-zinc-700 bg-zinc-950 hover:border-sky-500/60 hover:bg-zinc-900"
+                } disabled:cursor-not-allowed`}
+                data-testid="suggest-action"
+              >
+                {used ? (
+                  <svg
+                    width="14"
+                    height="14"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth="2"
+                    className="mt-0.5 shrink-0 text-emerald-400"
+                  >
+                    <path d="M20 6 9 17l-5-5" />
+                  </svg>
+                ) : (
+                  <svg
+                    width="14"
+                    height="14"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth="2"
+                    className="mt-0.5 shrink-0 text-sky-400"
+                  >
+                    <path d="m9 6 6 6-6 6" />
+                  </svg>
+                )}
+                <span className="min-w-0">
+                  <span className="block text-sm font-medium text-zinc-100">
+                    {a.label}
+                    {used && <span className="ml-1.5 text-xs font-normal text-emerald-400">sent</span>}
+                  </span>
+                  {a.description && <span className="block text-xs text-zinc-500">{a.description}</span>}
+                </span>
+              </button>
+            )
+          })}
+        </div>
+      ) : (
+        <Json value={state.input} label="input" />
+      )}
       {status === "completed" && state.output && <Json value={state.output} label="output" />}
       {status === "error" && (
         <pre className="mt-2 max-h-60 overflow-auto whitespace-pre-wrap rounded-lg bg-red-950/40 p-2 text-xs text-red-300">
