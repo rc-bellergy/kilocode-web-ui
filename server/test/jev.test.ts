@@ -168,16 +168,15 @@ describe("mapRisk boundaries", () => {
     expect(mapRisk({ ...LOW_SCORES, destroys_data: 0.59 }, t)).toBe("medium")
     expect(mapRisk({ ...LOW_SCORES, destroys_data: 0.6 }, t)).toBe("high")
   })
-  it("high when leaks_secrets crosses the threshold (0.49 vs 0.5)", () => {
-    expect(mapRisk({ ...LOW_SCORES, leaks_secrets: 0.49 }, t)).toBe("medium")
-    expect(mapRisk({ ...LOW_SCORES, leaks_secrets: 0.5 }, t)).toBe("high")
+  it("leaks_secrets has no medium band: 0.34 is low, 0.35 is high", () => {
+    expect(mapRisk({ ...LOW_SCORES, leaks_secrets: 0.34 }, t)).toBe("low")
+    expect(mapRisk({ ...LOW_SCORES, leaks_secrets: 0.35 }, t)).toBe("high")
   })
-  it("low requires reads_only AND all three quiet fields (0.69 vs 0.7)", () => {
-    expect(mapRisk({ ...LOW_SCORES, reads_only: 0.69 }, t)).toBe("medium")
-    expect(mapRisk({ ...LOW_SCORES, reads_only: 0.7 }, t)).toBe("low")
-    expect(mapRisk({ ...LOW_SCORES, destroys_data: 0.3 }, t)).toBe("medium")
-    expect(mapRisk({ ...LOW_SCORES, leaks_secrets: 0.3 }, t)).toBe("medium")
-    expect(mapRisk({ ...LOW_SCORES, changes_global_state: 0.3 }, t)).toBe("medium")
+  it("low requires reads_only AND all three quiet fields (0.49 vs 0.5)", () => {
+    expect(mapRisk({ ...LOW_SCORES, reads_only: 0.49 }, t)).toBe("medium")
+    expect(mapRisk({ ...LOW_SCORES, reads_only: 0.5 }, t)).toBe("low")
+    expect(mapRisk({ ...LOW_SCORES, destroys_data: 0.35 }, t)).toBe("medium")
+    expect(mapRisk({ ...LOW_SCORES, changes_global_state: 0.35 }, t)).toBe("medium")
   })
   it("medium otherwise", () => {
     expect(mapRisk(MEDIUM_SCORES, t)).toBe("medium")
