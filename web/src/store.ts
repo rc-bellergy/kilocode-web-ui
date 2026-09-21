@@ -67,6 +67,10 @@ interface AppState {
   jevUnavailableReason: string | null
   jevVerdicts: Record<string, JevVerdict | "unavailable">
 
+  // permission cards hidden from the inbox drawer (in-memory; the underlying
+  // request stays pending and the card returns on page reload)
+  dismissedPermissions: Record<string, true>
+
   // actions
   init: () => Promise<void>
   refreshHealth: () => Promise<void>
@@ -94,6 +98,7 @@ interface AppState {
   setJevAutoLevel: (level: "low+medium" | "low") => void
   refreshJevStatus: () => Promise<void>
   maybeClassifyPending: () => void
+  dismissPermission: (id: string) => void
   logout: () => Promise<void>
   showToast: (msg: string) => void
   setPermissionInboxOpen: (open: boolean) => void
@@ -154,6 +159,19 @@ function pruneJevVerdicts(
   const next = { ...s.jevVerdicts }
   for (const id of stale) delete next[id]
   return { jevVerdicts: next }
+}
+
+/** Drop dismissed entries whose permission is no longer pending. */
+function pruneDismissed(
+  s: Pick<AppState, "dismissedPermissions">,
+  permissions: PermissionRequest[],
+): Partial<AppState> | null {
+  const live = new Set(permissions.map((p) => p.id))
+  const stale = Object.keys(s.dismissedPermissions).filter((id) => !live.has(id))
+  if (stale.length === 0) return null
+  const next = { ...s.dismissedPermissions }
+  for (const id of stale) delete next[id]
+  return { dismissedPermissions: next }
 }
 
 function upsertMessage(messages: Message[], info: MessageInfo): Message[] {
@@ -276,6 +294,7 @@ export const useStore = create<AppState>((set, get) => ({
   jevAvailable: null,
   jevUnavailableReason: null,
   jevVerdicts: {},
+  dismissedPermissions: {},
 
   async init() {
     startBusyMessagePoll(set, get)
@@ -392,7 +411,7 @@ export const useStore = create<AppState>((set, get) => ({
     const { directory } = get()
     try {
       const permissions = await api.get.permissions(directory)
-      set((s) => ({ permissions, ...pruneJevVerdicts(s, permissions) }))
+      set((s) => ({ permissions, ...pruneJevVerdicts(s, permissions), ...pruneDismissed(s, permissions) }))
       // Single hook point for jev classification: covers boot, gap-fill and
       // permission.asked (its handler routes through this refresh).
       get().maybeClassifyPending()
@@ -606,6 +625,10 @@ export const useStore = create<AppState>((set, get) => ({
       if (jevVerdicts[p.id] !== undefined || jevClassifying.has(p.id)) continue
       void classifyJevPermission(get, p.id, p.sessionID, command)
     }
+  },
+
+  dismissPermission(id) {
+    set((s) => ({ dismissedPermissions: { ...s.dismissedPermissions, [id]: true } }))
   },
 
   async logout() {

@@ -28,6 +28,13 @@ function jevBadgeNode(
   }
   const auto = autoApprove && (verdict.risk === "low" || (level === "low+medium" && verdict.risk === "medium"))
   if (verdict.risk === "high" || !auto) {
+    if (verdict.risk === "high") {
+      return (
+        <span className="mt-2 inline-block rounded bg-red-500/15 px-2 py-0.5 text-xs font-semibold text-red-300">
+          AI categorised this request &ldquo;HIGH&rdquo; risk! Needs your approval
+        </span>
+      )
+    }
     return (
       <span className="mt-2 inline-block rounded bg-amber-500/15 px-2 py-0.5 text-xs text-amber-300">
         Jev: {verdict.risk} risk — needs your approval
@@ -55,6 +62,8 @@ export default function PermissionInbox() {
   const jevAvailable = useStore((s) => s.jevAvailable)
   const jevUnavailableReason = useStore((s) => s.jevUnavailableReason)
   const jevVerdicts = useStore((s) => s.jevVerdicts)
+  const dismissedPermissions = useStore((s) => s.dismissedPermissions)
+  const dismissPermission = useStore((s) => s.dismissPermission)
   const setJevAutoApprove = useStore((s) => s.setJevAutoApprove)
   const setJevAutoLevel = useStore((s) => s.setJevAutoLevel)
   const [open, setOpen] = useState(inboxOpen)
@@ -96,6 +105,8 @@ export default function PermissionInbox() {
   }
 
   const pendingTotal = permissions.length + questions.length
+  const visiblePermissions = permissions.filter((p) => !dismissedPermissions[p.id])
+  const dismissedCount = permissions.length - visiblePermissions.length
 
   return (
     <>
@@ -186,6 +197,12 @@ export default function PermissionInbox() {
                 </button>
               </header>
               <div className="flex-1 space-y-3 overflow-y-auto p-4">
+                {dismissedCount > 0 && (
+                  <p className="pt-2 text-center text-xs text-zinc-600">
+                    {dismissedCount} dismissed request{dismissedCount > 1 ? "s" : ""} still pending — reload the page
+                    to show {dismissedCount > 1 ? "them" : "it"} again.
+                  </p>
+                )}
                 {pendingTotal === 0 && (
                   <p className="pt-8 text-center text-sm text-zinc-500">
                     No pending permission requests. When Kilo needs approval to run a tool, it appears here.
@@ -204,9 +221,19 @@ export default function PermissionInbox() {
                     </div>
                   </div>
                 ))}
-                {permissions.map((p) => (
-                  <div key={p.id} className="rounded-xl border border-zinc-800 bg-zinc-900/70 p-4">
-                    <div className="text-sm font-semibold text-amber-300">{p.permission}</div>
+                {visiblePermissions.map((p) => (
+                  <div key={p.id} className="relative rounded-xl border border-zinc-800 bg-zinc-900/70 p-4">
+                    <button
+                      onClick={() => dismissPermission(p.id)}
+                      title="Dismiss — hide this card; the request stays pending and returns on page reload"
+                      aria-label="Dismiss permission request"
+                      className="absolute right-2 top-2 rounded-md p-1 text-zinc-500 transition hover:bg-zinc-800 hover:text-zinc-100"
+                    >
+                      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                        <path d="M18 6 6 18M6 6l12 12" />
+                      </svg>
+                    </button>
+                    <div className="pr-6 text-sm font-semibold text-amber-300">{p.permission}</div>
                     <div className="mt-0.5 truncate text-xs text-zinc-500">{sessionTitle(p.sessionID)}</div>
                     {typeof p.metadata?.command === "string" && jevAutoApprove && (jevVerdicts[p.id] !== undefined || jevAvailable !== false) && (
                       <div>{jevBadgeNode(jevVerdicts[p.id], jevAutoApprove, jevAutoLevel)}</div>
