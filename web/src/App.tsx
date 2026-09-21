@@ -28,6 +28,7 @@ function BellToggle() {
   async function toggle() {
     if (!prefs.enabled) {
       persist({ ...prefs, enabled: true })
+      primeAudio()
       const result = await ensurePermission()
       if (result === "denied") {
         showToast("Notifications blocked — allow them in the browser site settings, then re-enable")
@@ -44,32 +45,6 @@ function BellToggle() {
 
   return (
     <>
-      <button
-        onClick={() => {
-          persist({ ...prefs, sound: !prefs.sound })
-          if (!prefs.sound) primeAudio()
-        }}
-        disabled={!prefs.enabled}
-        title={
-          !prefs.enabled
-            ? "Enable notifications to control sound"
-            : prefs.sound
-              ? "Mute notification sound"
-              : "Play notification sound"
-        }
-        className={`rounded-lg border p-2 transition ${
-          prefs.enabled ? "hover:border-zinc-500" : "cursor-not-allowed opacity-40"
-        } ${prefs.enabled && prefs.sound ? "border-sky-500/50 text-sky-300" : "border-zinc-700 text-zinc-300"}`}
-      >
-        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-          <path d="M11 5 6 9H2v6h4l5 4V5z" />
-          {prefs.sound ? (
-            <path d="M15.5 8.5a5 5 0 0 1 0 7M19 5a9 9 0 0 1 0 14" />
-          ) : (
-            <path d="M22 9l-6 6M16 9l6 6" />
-          )}
-        </svg>
-      </button>
       <button
         onClick={() => void toggle()}
         title={

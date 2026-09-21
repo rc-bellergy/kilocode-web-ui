@@ -4,7 +4,6 @@
 
 export interface NotifyPrefs {
   enabled: boolean
-  sound: boolean
 }
 
 const NOTIFY_KEY = "kilo-web.notify"
@@ -14,12 +13,12 @@ export function loadNotifyPrefs(): NotifyPrefs {
     const raw = localStorage.getItem(NOTIFY_KEY)
     if (raw) {
       const parsed = JSON.parse(raw) as Partial<NotifyPrefs>
-      return { enabled: Boolean(parsed.enabled), sound: Boolean(parsed.sound) }
+      return { enabled: Boolean(parsed.enabled) }
     }
   } catch {
     /* storage unavailable */
   }
-  return { enabled: false, sound: false }
+  return { enabled: false }
 }
 
 export function saveNotifyPrefs(prefs: NotifyPrefs): void {
@@ -60,11 +59,11 @@ export interface NotifyOptions {
 /**
  * Fire a system notification. The OS notification only fires when the tab is
  * hidden (foreground uses toast/badge to avoid double-buzzing) and permission
- * is granted; the beep is independent of both — it plays whenever sound is on.
+ * is granted; the beep is independent of both — it plays whenever enabled.
  */
 export function systemNotify(title: string, opts: NotifyOptions = {}, prefs: NotifyPrefs): void {
   if (!prefs.enabled) return
-  if (prefs.sound) beep()
+  beep()
   if (!notificationsSupported() || Notification.permission !== "granted") return
   if (!document.hidden) return
   try {
@@ -82,7 +81,7 @@ export function systemNotify(title: string, opts: NotifyOptions = {}, prefs: Not
 let audioCtx: AudioContext | null = null
 
 /**
- * Create/resume the AudioContext inside a user gesture (speaker toggle) so
+ * Create/resume the AudioContext inside a user gesture (bell toggle click) so
  * autoplay policy lets later beeps play, including in background tabs.
  */
 export function primeAudio(): void {

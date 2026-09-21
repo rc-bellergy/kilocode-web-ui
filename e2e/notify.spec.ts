@@ -58,7 +58,7 @@ test.describe("E2E-10 browser notifications", () => {
     await page.getByTitle(/Enable notifications/).click()
 
     const stored = await page.evaluate(() => localStorage.getItem("kilo-web.notify"))
-    expect(JSON.parse(stored!)).toEqual({ enabled: true, sound: false })
+    expect(JSON.parse(stored!)).toEqual({ enabled: true })
 
     // permission.asked → system notification with permission, session title and command.
     const sessionID = await createMockSession()
