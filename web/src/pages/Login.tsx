@@ -32,7 +32,7 @@ export default function Login({ onLoggedIn }: { onLoggedIn: () => void }) {
             K
           </span>
           <div>
-            <h1 className="text-lg font-semibold">Kilo Code</h1>
+            <h1 className="text-lg font-semibold">Kilo Code Web UI</h1>
             <p className="text-sm text-zinc-400">Sign in to continue</p>
           </div>
         </div>

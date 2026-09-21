@@ -169,7 +169,7 @@ export default function App() {
           <span className="grid size-6 place-items-center rounded bg-gradient-to-br from-sky-400 to-indigo-500 text-[11px] font-bold text-zinc-950">
             K
           </span>
-          <span className="hidden sm:inline">Kilo Code</span>
+          <span className="hidden sm:inline">Kilo Code Web UI</span>
         </a>
         <div className="ml-auto flex items-center gap-2">
           {!sseConnected && directory !== null && (
