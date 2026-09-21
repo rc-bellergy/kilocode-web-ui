@@ -133,6 +133,10 @@ export async function startBackend(): Promise<void> {
         ALLOWED_IPS: "",
         COOKIE_SECURE: "0",
         KILO_SERVER_PASSWORD: "",
+        // Deterministic Jev scores for the auto-approve specs; the feature is
+        // default-off so all other suites are unaffected.
+        JEV_MOCK: "1",
+        REQUESTY_JEV_KEY: "",
       },
     },
   )

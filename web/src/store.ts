@@ -6,6 +6,7 @@ import type {
   Agent,
   Favourite,
   Health,
+  JevVerdict,
   KiloEvent,
   Message,
   MessageInfo,
@@ -59,6 +60,13 @@ interface AppState {
   permissionInboxOpen: boolean
   unreadCompleted: string[]
 
+  // jev auto-approve (persisted toggles + live classification state)
+  jevAutoApprove: boolean
+  jevAutoLevel: "low+medium" | "low"
+  jevAvailable: boolean | null
+  jevUnavailableReason: string | null
+  jevVerdicts: Record<string, JevVerdict | "unavailable">
+
   // actions
   init: () => Promise<void>
   refreshHealth: () => Promise<void>
@@ -82,6 +90,10 @@ interface AppState {
   replyQuestion: (requestID: string, answers: string[][]) => Promise<void>
   rejectQuestion: (requestID: string) => Promise<void>
   setComposer: (selection: ComposerSelection) => void
+  setJevAutoApprove: (on: boolean) => void
+  setJevAutoLevel: (level: "low+medium" | "low") => void
+  refreshJevStatus: () => Promise<void>
+  maybeClassifyPending: () => void
   logout: () => Promise<void>
   showToast: (msg: string) => void
   setPermissionInboxOpen: (open: boolean) => void
@@ -90,6 +102,8 @@ interface AppState {
 
 const AGENT_KEY = "kilo-web.agent"
 const MODEL_KEY = "kilo-web.model"
+const JEV_AUTO_KEY = "kilo-web.jev-autoapprove"
+const JEV_LEVEL_KEY = "kilo-web.jev-auto-level"
 
 function loadStoredSelection(): ComposerSelection {
   try {
@@ -111,6 +125,35 @@ function saveStoredSelection(selection: ComposerSelection) {
   } catch {
     /* storage unavailable */
   }
+}
+
+function loadJevAutoApprove(): boolean {
+  try {
+    return localStorage.getItem(JEV_AUTO_KEY) === "1"
+  } catch {
+    return false
+  }
+}
+
+function loadJevAutoLevel(): "low+medium" | "low" {
+  try {
+    return localStorage.getItem(JEV_LEVEL_KEY) === "low" ? "low" : "low+medium"
+  } catch {
+    return "low+medium"
+  }
+}
+
+/** Drop verdict entries whose permission is no longer pending. */
+function pruneJevVerdicts(
+  s: Pick<AppState, "jevVerdicts">,
+  permissions: PermissionRequest[],
+): Partial<AppState> | null {
+  const live = new Set(permissions.map((p) => p.id))
+  const stale = Object.keys(s.jevVerdicts).filter((id) => !live.has(id))
+  if (stale.length === 0) return null
+  const next = { ...s.jevVerdicts }
+  for (const id of stale) delete next[id]
+  return { jevVerdicts: next }
 }
 
 function upsertMessage(messages: Message[], info: MessageInfo): Message[] {
@@ -228,6 +271,11 @@ export const useStore = create<AppState>((set, get) => ({
   toast: null,
   permissionInboxOpen: false,
   unreadCompleted: [],
+  jevAutoApprove: loadJevAutoApprove(),
+  jevAutoLevel: loadJevAutoLevel(),
+  jevAvailable: null,
+  jevUnavailableReason: null,
+  jevVerdicts: {},
 
   async init() {
     startBusyMessagePoll(set, get)
@@ -239,6 +287,7 @@ export const useStore = create<AppState>((set, get) => ({
       get().refreshQuestions(),
       get().refreshAgentsAndProviders(),
       get().refreshFavourites(),
+      get().refreshJevStatus(),
     ])
     get().setDirectory(get().directory)
     set({ booted: true })
@@ -343,7 +392,10 @@ export const useStore = create<AppState>((set, get) => ({
     const { directory } = get()
     try {
       const permissions = await api.get.permissions(directory)
-      set({ permissions })
+      set((s) => ({ permissions, ...pruneJevVerdicts(s, permissions) }))
+      // Single hook point for jev classification: covers boot, gap-fill and
+      // permission.asked (its handler routes through this refresh).
+      get().maybeClassifyPending()
     } catch {
       /* transient */
     }
@@ -510,6 +562,50 @@ export const useStore = create<AppState>((set, get) => ({
   setComposer(selection) {
     saveStoredSelection(selection)
     set({ composer: selection })
+  },
+
+  setJevAutoApprove(on) {
+    try {
+      if (on) localStorage.setItem(JEV_AUTO_KEY, "1")
+      else localStorage.removeItem(JEV_AUTO_KEY)
+    } catch {
+      /* storage unavailable */
+    }
+    set({ jevAutoApprove: on })
+    if (on) jevReevaluate(get)
+  },
+
+  setJevAutoLevel(level) {
+    try {
+      localStorage.setItem(JEV_LEVEL_KEY, level)
+    } catch {
+      /* storage unavailable */
+    }
+    set({ jevAutoLevel: level })
+    if (get().jevAutoApprove) jevReevaluate(get)
+  },
+
+  async refreshJevStatus() {
+    try {
+      const status = await api.get.jevStatus()
+      set({
+        jevAvailable: status.available,
+        jevUnavailableReason: status.available ? null : "REQUESTY_JEV_KEY not configured",
+      })
+    } catch {
+      /* leave as-is; per-request failures surface through verdicts */
+    }
+  },
+
+  maybeClassifyPending() {
+    const { jevAutoApprove, jevAvailable, permissions, jevVerdicts } = get()
+    if (!jevAutoApprove || jevAvailable === false) return
+    for (const p of permissions) {
+      const command = p.metadata?.command
+      if (typeof command !== "string" || !command.trim()) continue
+      if (jevVerdicts[p.id] !== undefined || jevClassifying.has(p.id)) continue
+      void classifyJevPermission(get, p.id, p.sessionID, command)
+    }
   },
 
   async logout() {
@@ -690,6 +786,71 @@ export const useStore = create<AppState>((set, get) => ({
 /** Busy cycles that already qualified for a completion notification. */
 const notifiedBusyCycles = new Set<string>()
 let sseErrorCount = 0
+
+// ---------------------------------------------------------------- jev helpers
+
+/** requestIDs with a classification in flight (dedupe across triggers). */
+const jevClassifying = new Set<string>()
+/** Consecutive classification failures; >= 3 circuit-breaks until reload. */
+let jevFailStreak = 0
+
+function jevAutoApprovable(risk: "low" | "medium" | "high", level: "low+medium" | "low"): boolean {
+  return risk === "low" || (level === "low+medium" && risk === "medium")
+}
+
+/** After a settings change: classify whatever is pending, then re-reply
+ *  permissions whose stored verdicts have become auto-approvable. */
+function jevReevaluate(get: () => AppState): void {
+  get().maybeClassifyPending()
+  const { jevAutoApprove, jevAutoLevel, permissions, jevVerdicts } = get()
+  if (!jevAutoApprove) return
+  for (const p of permissions) {
+    const verdict = jevVerdicts[p.id]
+    if (!verdict || verdict === "unavailable") continue
+    if (jevAutoApprovable(verdict.risk, jevAutoLevel)) {
+      const command = typeof p.metadata?.command === "string" ? p.metadata.command : ""
+      void autoReplyJev(get, p.id, verdict.risk, command)
+    }
+  }
+}
+
+async function classifyJevPermission(
+  get: () => AppState,
+  requestID: string,
+  sessionID: string,
+  command: string,
+): Promise<void> {
+  jevClassifying.add(requestID)
+  try {
+    const verdict = await api.post.jevClassify({ requestID, sessionID, command })
+    jevFailStreak = 0
+    const { jevAutoApprove, jevAutoLevel } = get()
+    if (jevAutoApprove && jevAutoApprovable(verdict.risk, jevAutoLevel)) {
+      // Store the verdict first so the badge renders even if the reply races.
+      useStore.setState((s) => ({ jevVerdicts: { ...s.jevVerdicts, [requestID]: verdict } }))
+      await autoReplyJev(get, requestID, verdict.risk, command)
+      return
+    }
+    useStore.setState((s) => ({ jevVerdicts: { ...s.jevVerdicts, [requestID]: verdict } }))
+  } catch (err) {
+    if (err instanceof ApiError && err.status === 401) return
+    useStore.setState((s) => ({ jevVerdicts: { ...s.jevVerdicts, [requestID]: "unavailable" } }))
+    jevFailStreak++
+    if (jevFailStreak >= 3) {
+      useStore.setState({ jevAvailable: false, jevUnavailableReason: "Jev unreachable" })
+    }
+  } finally {
+    jevClassifying.delete(requestID)
+  }
+}
+
+async function autoReplyJev(get: () => AppState, requestID: string, risk: JevVerdict["risk"], command: string): Promise<void> {
+  // Race guard: the user may have answered manually while classification
+  // was in flight — only the first reply wins, so drop ours silently.
+  if (!get().permissions.some((p) => p.id === requestID)) return
+  await get().replyPermission(requestID, "once")
+  get().showToast(`Auto-approved by Jev (${risk} risk): ${command.split("\n")[0].slice(0, 120)}`)
+}
 
 /** Timestamp of the last SSE event that touched the open session. */
 let lastOpenSessionEventAt = 0

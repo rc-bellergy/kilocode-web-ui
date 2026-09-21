@@ -15,7 +15,8 @@
     "test": "npm run test -w server && playwright test",
     "test:unit": "npm run test -w server",
     "test:e2e": "playwright test",
-    "test:real": "KILO_REAL_E2E=1 playwright test -c playwright.real.config.ts"
+    "test:real": "KILO_REAL_E2E=1 playwright test -c playwright.real.config.ts",
+    "eval:jev": "npx tsx scripts/jev-eval-run.ts && npx tsx scripts/jev-eval-report.ts"
   },
   "devDependencies": {
     "@playwright/test": "^1.63.0",

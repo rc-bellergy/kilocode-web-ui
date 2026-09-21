@@ -60,6 +60,7 @@ export const api = {
     agents: (d: string | null) => json<import("./types").Agent[]>(`/api/kilo/agent${dir(d)}`),
     providers: (d: string | null) => json<import("./types").ProviderList>(`/api/kilo/provider${dir(d)}`),
     favourites: () => json<{ favourites: import("./types").Favourite[] }>("/api/favourites"),
+    jevStatus: () => json<import("./types").JevStatus>("/api/jev/status"),
   },
   post: {
     login: (password: string) =>
@@ -102,6 +103,12 @@ export const api = {
       }),
     questionReject: (d: string | null, requestID: string) =>
       request(`/api/kilo/question/${requestID}/reject${dir(d)}`, { method: "POST" }),
+    jevClassify: (payload: { requestID: string; sessionID?: string; command: string }) =>
+      json<import("./types").JevVerdict>("/api/jev/classify", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify(payload),
+      }),
   },
   put: {
     favourites: (list: import("./types").Favourite[]) =>

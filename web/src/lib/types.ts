@@ -180,6 +180,28 @@ export interface Health {
   kilo: { mode: "spawned" | "attached"; ready: boolean; url: string | null; error: string | null }
 }
 
+/** Jev risk classification (server/src/jev.ts contract). */
+export interface JevScores {
+  destroys_data: number
+  leaks_secrets: number
+  changes_global_state: number
+  reads_only: number
+}
+
+export interface JevVerdict {
+  risk: "low" | "medium" | "high"
+  scores: JevScores | null
+  source: "jev" | "blocklist" | "mock"
+  model?: string
+  blockedBy?: string
+}
+
+export interface JevStatus {
+  available: boolean
+  model: string
+  mock: boolean
+}
+
 export interface KiloEvent {
   id: string
   type: string

@@ -1,7 +1,45 @@
 import { useEffect, useState } from "react"
 import { createPortal } from "react-dom"
 import { useStore } from "../store"
+import type { JevVerdict } from "../lib/types"
 import QuestionForm from "./QuestionForm"
+
+function jevBadgeNode(
+  verdict: JevVerdict | "unavailable" | undefined,
+  autoApprove: boolean,
+  level: "low+medium" | "low",
+) {
+  if (verdict === undefined) {
+    return <span className="mt-2 inline-block rounded bg-zinc-800 px-2 py-0.5 text-xs text-zinc-400">Jev assessing…</span>
+  }
+  if (verdict === "unavailable") {
+    return (
+      <span className="mt-2 inline-block rounded bg-zinc-800 px-2 py-0.5 text-xs text-zinc-400">
+        Jev unavailable — manual approval needed
+      </span>
+    )
+  }
+  if (verdict.source === "blocklist") {
+    return (
+      <span className="mt-2 inline-block rounded bg-red-500/15 px-2 py-0.5 text-xs text-red-300">
+        Blocked by safety list ({verdict.blockedBy}) — needs your approval
+      </span>
+    )
+  }
+  const auto = autoApprove && (verdict.risk === "low" || (level === "low+medium" && verdict.risk === "medium"))
+  if (verdict.risk === "high" || !auto) {
+    return (
+      <span className="mt-2 inline-block rounded bg-amber-500/15 px-2 py-0.5 text-xs text-amber-300">
+        Jev: {verdict.risk} risk — needs your approval
+      </span>
+    )
+  }
+  return (
+    <span className="mt-2 inline-block rounded bg-emerald-500/15 px-2 py-0.5 text-xs text-emerald-300">
+      Jev: {verdict.risk} risk — auto-approved
+    </span>
+  )
+}
 
 export default function PermissionInbox() {
   const permissions = useStore((s) => s.permissions)
@@ -12,6 +50,13 @@ export default function PermissionInbox() {
   const rejectQuestion = useStore((s) => s.rejectQuestion)
   const inboxOpen = useStore((s) => s.permissionInboxOpen)
   const setInboxOpen = useStore((s) => s.setPermissionInboxOpen)
+  const jevAutoApprove = useStore((s) => s.jevAutoApprove)
+  const jevAutoLevel = useStore((s) => s.jevAutoLevel)
+  const jevAvailable = useStore((s) => s.jevAvailable)
+  const jevUnavailableReason = useStore((s) => s.jevUnavailableReason)
+  const jevVerdicts = useStore((s) => s.jevVerdicts)
+  const setJevAutoApprove = useStore((s) => s.setJevAutoApprove)
+  const setJevAutoLevel = useStore((s) => s.setJevAutoLevel)
   const [open, setOpen] = useState(inboxOpen)
   const [rejecting, setRejecting] = useState<string | null>(null)
   const [feedback, setFeedback] = useState("")
@@ -68,6 +113,41 @@ export default function PermissionInbox() {
           </span>
         )}
       </button>
+
+      <button
+        onClick={() => setJevAutoApprove(!jevAutoApprove)}
+        disabled={jevAvailable === false}
+        title={
+          jevAvailable === false
+            ? (jevUnavailableReason ?? "Jev unavailable")
+            : jevAutoApprove
+              ? "Jev auto-approve on — click to disable"
+              : "Jev auto-approve: classify commands and auto-approve low-risk ones"
+        }
+        aria-pressed={jevAutoApprove}
+        aria-label="Jev auto-approve"
+        className={`rounded-lg border p-2 transition hover:border-zinc-500 disabled:cursor-not-allowed disabled:opacity-40 ${
+          jevAutoApprove ? "border-sky-500/50 text-sky-300" : "border-zinc-700 text-zinc-400"
+        }`}
+      >
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+          <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10" />
+          <path d="m9 12 2 2 4-4" />
+        </svg>
+      </button>
+
+      {jevAutoApprove && (
+        <select
+          value={jevAutoLevel}
+          onChange={(e) => setJevAutoLevel(e.target.value as "low+medium" | "low")}
+          title="Auto-approve level"
+          aria-label="Auto-approve level"
+          className="rounded-lg border border-zinc-700 bg-zinc-900 px-1.5 py-1.5 text-xs text-zinc-300 outline-none transition hover:border-zinc-500"
+        >
+          <option value="low+medium">Low + Medium</option>
+          <option value="low">Low only</option>
+        </select>
+      )}
 
       <button
         onClick={() => void useStore.getState().logout()}
@@ -128,6 +208,9 @@ export default function PermissionInbox() {
                   <div key={p.id} className="rounded-xl border border-zinc-800 bg-zinc-900/70 p-4">
                     <div className="text-sm font-semibold text-amber-300">{p.permission}</div>
                     <div className="mt-0.5 truncate text-xs text-zinc-500">{sessionTitle(p.sessionID)}</div>
+                    {typeof p.metadata?.command === "string" && jevAutoApprove && (jevVerdicts[p.id] !== undefined || jevAvailable !== false) && (
+                      <div>{jevBadgeNode(jevVerdicts[p.id], jevAutoApprove, jevAutoLevel)}</div>
+                    )}
                     {p.patterns.length > 0 && (
                       <div className="mt-2 flex flex-wrap gap-1.5">
                         {p.patterns.map((pat) => (

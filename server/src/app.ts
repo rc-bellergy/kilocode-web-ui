@@ -6,6 +6,7 @@ import type { Express } from "express"
 import { authRoutes, healthHandler, requireAuth } from "./auth.js"
 import { favouritesRouter } from "./favourites.js"
 import { ipAllowlist, parseAllowlist } from "./ipAllowlist.js"
+import { jevRouter } from "./jev.js"
 import { proxyHandler } from "./proxy.js"
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
@@ -30,6 +31,10 @@ export function createApp(): Express {
 
   // kilo-web's own JSON storage (model favourites); auth-gated like /api/kilo.
   app.use("/api/favourites", express.json({ limit: "256kb" }), favouritesRouter)
+
+  // Jev risk classification for command permissions (JSON bodies, auth-gated,
+  // before the raw-proxy catch-all).
+  app.use("/api/jev", express.json({ limit: "64kb" }), jevRouter)
 
   // Proxy to kilo serve. Raw body parser so any content type passes through untouched.
   app.use("/api/kilo", express.raw({ type: "*/*", limit: "25mb" }), proxyHandler)
