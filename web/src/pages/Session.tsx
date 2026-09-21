@@ -19,6 +19,8 @@ export default function Session() {
   const composer = useStore((s) => s.composer)
   const setComposer = useStore((s) => s.setComposer)
   const permissions = useStore((s) => s.permissions)
+  const dismissedPermissions = useStore((s) => s.dismissedPermissions)
+  const dismissPermission = useStore((s) => s.dismissPermission)
   const replyPermission = useStore((s) => s.replyPermission)
   const questions = useStore((s) => s.questions)
   const replyQuestion = useStore((s) => s.replyQuestion)
@@ -34,7 +36,9 @@ export default function Session() {
   const status = sessionID ? statuses[sessionID] : undefined
   const busy = status?.type === "busy" || status?.type === "retry"
   const session = sessions.find((s) => s.id === sessionID)
-  const sessionPermissions = sessionID ? permissions.filter((p) => p.sessionID === sessionID) : []
+  const sessionPermissions = sessionID
+    ? permissions.filter((p) => p.sessionID === sessionID && !dismissedPermissions[p.id])
+    : []
   // Pending questions whose tool part is not (yet) in the transcript render
   // above the composer; matched ones render inline in the message list.
   const sessionQuestions =
@@ -162,8 +166,18 @@ function onKeyDown(e: KeyboardEvent<HTMLTextAreaElement>) {
       {sessionPermissions.length > 0 && (
         <div className="space-y-3 border-t border-amber-500/30 py-3">
           {sessionPermissions.map((p) => (
-            <div key={p.id} className="rounded-xl border border-amber-500/50 bg-amber-500/5 p-3">
-              <div className="flex items-center gap-2">
+            <div key={p.id} className="relative rounded-xl border border-amber-500/50 bg-amber-500/5 p-3">
+              <button
+                onClick={() => dismissPermission(p.id)}
+                title="Dismiss — hide this card from the session; the request stays pending in the permission inbox and returns on reload"
+                aria-label="Dismiss permission request"
+                className="absolute right-2 top-2 rounded-md p-1 text-zinc-500 transition hover:bg-zinc-800 hover:text-zinc-100"
+              >
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                  <path d="M18 6 6 18M6 6l12 12" />
+                </svg>
+              </button>
+              <div className="flex items-center gap-2 pr-6">
                 <span className="size-2 animate-pulse rounded-full bg-amber-400" />
                 <span className="text-sm font-semibold text-amber-300">
                   Agent needs approval — {p.permission}
