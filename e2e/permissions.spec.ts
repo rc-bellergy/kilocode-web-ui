@@ -59,6 +59,30 @@ test.describe("E2E-6 permission inbox", () => {
       .toMatchObject({ requestID: request3.id, reply: "reject", message: "use a safer command" })
   })
 
+  test("drawer open refetches pending permissions when the permission.asked event was lost", async ({ page }) => {
+    const sessionID = await createMockSession()
+    await expect(page.locator('header[data-sse-state="connected"]')).toBeVisible()
+
+    // Wedge the browser's SSE stream: frames emitted now (including
+    // permission.asked) never arrive — the event is lost.
+    await control("/__control/sse-silence", { on: true })
+    const request = (await control("/__control/permission", { sessionID, permission: "bash" })) as { id: string }
+
+    // No badge: the event was dropped and nothing else refreshes permissions.
+    const inboxButton = page.getByTitle("Permission requests")
+    await expect(inboxButton.locator("span")).toHaveCount(0)
+
+    // Opening the drawer refetches from the server — the lost card appears
+    // and is fully actionable.
+    await inboxButton.click()
+    const panel = page.locator("aside")
+    await expect(panel.getByRole("button", { name: "Approve" })).toBeVisible()
+    await panel.getByRole("button", { name: "Approve" }).click()
+    await expect
+      .poll(async () => (await mockState()).replies.at(-1))
+      .toMatchObject({ requestID: request.id, reply: "once" })
+  })
+
   test("drawer overlays the full viewport and closes via the close button", async ({ page }) => {
     const sessionID = await createMockSession()
     await control("/__control/permission", { sessionID, permission: "bash" })

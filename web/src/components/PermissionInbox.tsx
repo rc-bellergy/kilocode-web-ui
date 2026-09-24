@@ -57,6 +57,8 @@ export default function PermissionInbox() {
   const rejectQuestion = useStore((s) => s.rejectQuestion)
   const inboxOpen = useStore((s) => s.permissionInboxOpen)
   const setInboxOpen = useStore((s) => s.setPermissionInboxOpen)
+  const refreshPermissions = useStore((s) => s.refreshPermissions)
+  const refreshQuestions = useStore((s) => s.refreshQuestions)
   const jevAutoApprove = useStore((s) => s.jevAutoApprove)
   const jevAutoLevel = useStore((s) => s.jevAutoLevel)
   const jevAvailable = useStore((s) => s.jevAvailable)
@@ -72,6 +74,17 @@ export default function PermissionInbox() {
   useEffect(() => {
     if (inboxOpen && !open) setOpen(true)
   }, [inboxOpen, open])
+
+  // Lost-event fallback: SSE is the only push channel for permission.asked /
+  // question.asked, and a dropped frame (zombie stream, reconnect gap) would
+  // leave the request invisible until a reconnect gap-fill or reload. Refetch
+  // the pending lists whenever the drawer opens so the panel reflects server
+  // truth.
+  useEffect(() => {
+    if (!open) return
+    void refreshPermissions()
+    void refreshQuestions()
+  }, [open, refreshPermissions, refreshQuestions])
 
   useEffect(() => {
     if (!open) return
