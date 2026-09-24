@@ -4,7 +4,7 @@
 
 A self-hosted web app for using [Kilo Code](https://kilo.ai) in the browser. The backend runs on `kilo serve` (the Kilo CLI): it can start a new instance automatically, or attach to one that is already running.
 
-![](assets/screen01.png)
+![](assets/screen02.png)
 
 ## Goals
 
@@ -114,6 +114,30 @@ npm run test:real  # E2E against a real kilo serve
 ## Jev auto-approve
 
 Opt-in feature that answers `permission.asked` for shell commands while a tab is open. Every command permission (`metadata.command`) is scored by TypeSafe Jev (`typesafe/jev-1.13.0` via the [requesty.ai](https://requesty.ai) router, version pinned deliberately) after a deterministic safety net:
+
+```mermaid
+flowchart TD
+    A["kilo serve: permission.asked over SSE"] --> B{"Command permission<br/>and shield toggle on?"}
+    B -- no --> Z["Permission inbox — you decide"]
+    B -- yes --> C["Tab: POST /api/jev/classify"]
+    C -. "audit: every verdict and error appends to data/jev-audit.jsonl" .-> AUD[(audit log)]
+    C --> R["Redact secrets<br/>ghp_…, sk-…, AKIA… → «redacted»"]
+    R --> BL{"Blocklist hit?<br/>sudo · rm -rf · git push --force · curl|sh …"}
+    BL -- "hit: risk high, no Jev call" --> D
+    BL -- miss --> K{"REQUESTY_JEV_KEY configured?"}
+    K -- "no: 503" --> ERR["Verdict unavailable"]
+    K -- yes --> JEV["TypeSafe Jev via requesty router<br/>serialized · JEV_TIMEOUT_MS"]
+    JEV -- scores --> MAP["mapRisk on JEV_T_* thresholds<br/>→ low / medium / high"]
+    JEV -- "timeout / error: 504 / 502" --> ERR
+    MAP --> D{"Auto-approvable?<br/>low, or medium at Low + Medium"}
+    D -- yes --> OK["Reply once (never always)<br/>toast + verdict badge"]
+    D -- "no: high, or medium at Low only" --> Z
+    ERR --> CB{"3 failures in a row?"}
+    CB -- yes --> OFF["Circuit-break until reload"]
+    CB -- no --> Z
+```
+
+![](assets/screen03.png)
 
 1. **Secret redaction**: known token shapes (`ghp_…`, `sk-…`, `AKIA…`, `bearer …`, `token=…`, …) become `«redacted»` before anything is sent or logged.
 2. **Blocklist** (checked after redaction; a hit is high risk without asking Jev — adversarial command text cannot talk its way past it): `sudo`, `rm` with recursive+force flags, `git push --force` (but not `--force-with-lease`), `git reset --hard`, `curl|wget … | sh`, `dd of=/if=`, `mkfs`, `chmod -R 777 /`, fork bombs, `> /dev/sd*`, `nuke`. Extend with `JEV_BLOCKLIST_EXTRA`.
